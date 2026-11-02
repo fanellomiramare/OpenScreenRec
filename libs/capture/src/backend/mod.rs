@@ -10,6 +10,8 @@
 //! (macOS, planned) and [`scap`](https://github.com/CapSoftware/scap)
 //! (cross-platform model). All MIT or Apache-2.0 licensed.
 
+#[cfg(target_os = "macos")]
+mod sck;
 #[cfg(target_os = "windows")]
 mod wgc;
 
@@ -17,7 +19,7 @@ mod wgc;
 pub const BACKEND_NAME: &str = "windows-graphics-capture";
 
 #[cfg(target_os = "macos")]
-pub const BACKEND_NAME: &str = "screen-capture-kit (M4)";
+pub const BACKEND_NAME: &str = "screen-capture-kit";
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub const BACKEND_NAME: &str = "x11 / pipewire-portal (M5)";
@@ -30,8 +32,27 @@ pub fn backend_name() -> &'static str {
     BACKEND_NAME
 }
 
+/// Is screen recording already permitted on this OS? Always `true`
+/// where no permission system exists (Windows, Linux).
+pub fn screen_recording_granted() -> bool {
+    #[cfg(target_os = "macos")]
+    return sck::screen_recording_granted();
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
+/// Ask the OS for screen recording permission (shows the system prompt
+/// on macOS; no-op elsewhere). Returns the granted state right after
+/// the call — poll [`screen_recording_granted`] for the final answer.
+pub fn request_screen_recording_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    return sck::request_screen_recording();
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
 /// Create a [`FrameSource`] for any supported [`CaptureTarget`].
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn create_capture_source(
     target: &crate::CaptureTarget,
     fps: u32,
@@ -51,13 +72,13 @@ pub fn create_capture_source(
 }
 
 /// Create a [`FrameSource`] for any supported [`CaptureTarget`].
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn create_capture_source(
     _target: &crate::CaptureTarget,
     _fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
     Err(crate::CaptureError::Unsupported(
-        "capture lands on macOS in M4 and on Linux in M5".into(),
+        "capture lands on Linux in M5".into(),
     ))
 }
 
@@ -76,15 +97,22 @@ pub fn create_monitor_source(
 }
 
 /// Create a [`FrameSource`] for one monitor at a given frame-rate hint.
-///
-/// Monitor capture lands on macOS in M4 and on Linux in M5.
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn create_monitor_source(
+    monitor_id: usize,
+    fps: u32,
+) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
+    Ok(Box::new(sck::SckSource::new(monitor_id, fps)?))
+}
+
+/// Monitor capture lands on Linux in M5.
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_monitor_source(
     _monitor_id: usize,
     _fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
     Err(crate::CaptureError::Unsupported(
-        "monitor capture lands on macOS in M4 and on Linux in M5".into(),
+        "monitor capture lands on Linux in M5".into(),
     ))
 }
 
@@ -103,9 +131,23 @@ pub fn create_region_source(
     )?))
 }
 
-/// Create a [`FrameSource`] for a rectangle; lands with the platform
-/// backends (macOS M4, Linux M5).
-#[cfg(not(target_os = "windows"))]
+/// Create a [`FrameSource`] for a rectangle in primary-display-local
+/// physical pixels.
+#[cfg(target_os = "macos")]
+pub fn create_region_source(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    fps: u32,
+) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
+    Ok(Box::new(sck::SckSource::new_region(
+        x, y, width, height, fps,
+    )?))
+}
+
+/// Region capture lands on Linux in M5.
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_region_source(
     _x: i32,
     _y: i32,
@@ -114,7 +156,7 @@ pub fn create_region_source(
     _fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
     Err(crate::CaptureError::Unsupported(
-        "region capture lands on macOS in M4 and on Linux in M5".into(),
+        "region capture lands on Linux in M5".into(),
     ))
 }
 

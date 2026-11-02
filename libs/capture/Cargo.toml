@@ -13,3 +13,6 @@ thiserror = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-capture = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = "11"
