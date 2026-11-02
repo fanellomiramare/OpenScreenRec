@@ -86,9 +86,6 @@ mod tests {
 
     #[test]
     fn list_targets_is_an_honest_stub_until_m1() {
-        assert!(matches!(
-            list_targets(),
-            Err(CaptureError::Unsupported(_))
-        ));
+        assert!(matches!(list_targets(), Err(CaptureError::Unsupported(_))));
     }
 }

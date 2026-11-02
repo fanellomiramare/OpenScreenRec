@@ -30,25 +30,23 @@ fn main() -> eframe::Result<()> {
 struct App;
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(28.0);
-                ui.heading(osr_common::APP_NAME);
-                ui.add_space(4.0);
-                ui.weak(format!(
-                    "v{} — 100% Rust, MIT licensed",
-                    env!("CARGO_PKG_VERSION")
-                ));
-                ui.add_space(18.0);
-                ui.separator();
-                ui.add_space(18.0);
-                ui.label("Early scaffolding build (M0).");
-                ui.label("The recording pipeline lands milestone by milestone:");
-                ui.weak("M1 video capture · M2 audio · M3 controls");
-                ui.add_space(28.0);
-                ui.weak("Your recordings never leave your machine.");
-            });
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(28.0);
+            ui.heading(osr_common::APP_NAME);
+            ui.add_space(4.0);
+            ui.weak(format!(
+                "v{} — 100% Rust, MIT licensed",
+                env!("CARGO_PKG_VERSION")
+            ));
+            ui.add_space(18.0);
+            ui.separator();
+            ui.add_space(18.0);
+            ui.label("Early scaffolding build (M0).");
+            ui.label("The recording pipeline lands milestone by milestone:");
+            ui.weak("M1 video capture · M2 audio · M3 controls");
+            ui.add_space(28.0);
+            ui.weak("Your recordings never leave your machine.");
         });
     }
 }
