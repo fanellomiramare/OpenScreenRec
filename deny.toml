@@ -16,6 +16,9 @@ allow = [
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
     "BSL-1.0",
+    # Font licenses: egui's default fonts are embedded under these.
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
 ]
 confidence-threshold = 0.93
 
@@ -26,6 +29,18 @@ multiple-versions = "warn"
 [advisories]
 version = 2
 yanked = "warn"
+# Unmaintained transitive dependencies of egui 0.37 — no safe upgrade
+# exists yet. Revisit (remove these ignores) when eframe updates its
+# font/D-Bus stack.
+ignore = [
+    # ttf-parser: egui will migrate to skrifa.
+    "RUSTSEC-2026-0192",
+    # zvariant, zbus_names, zvariant_derive: merged into zbus 6;
+    # pulled in transitively by accesskit on Linux (D-Bus accessibility).
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [sources]
 unknown-registry = "warn"
