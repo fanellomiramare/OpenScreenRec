@@ -25,8 +25,9 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use ashpd::desktop::screencast::{
-    CursorMode, PersistMode, Screencast, SelectSourcesOptions, SourceType,
+use ashpd::desktop::{
+    PersistMode,
+    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
 };
 use pipewire as pw;
 use pw::spa::param::format_utils;
@@ -125,6 +126,26 @@ fn copy_rows(bytes: &[u8], stride: usize, width: u32, first_row: u32, rows: u32)
     out
 }
 
+fn copy_packed(bytes: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
+    copy_rows(bytes, stride, width, 0, height)
+}
+
+fn copy_cropped(bytes: &[u8], stride: usize, width: u32, height: u32, crop: Crop) -> Vec<u8> {
+    if crop.y.saturating_add(crop.height) > height || crop.x.saturating_add(crop.width) > width {
+        return Vec::new();
+    }
+    let row_bytes = crop.width as usize * 4;
+    let mut out = Vec::with_capacity(row_bytes * crop.height as usize);
+    for row in crop.y..crop.y + crop.height {
+        let start = row as usize * stride + crop.x as usize * 4;
+        if start + row_bytes > bytes.len() {
+            break;
+        }
+        out.extend_from_slice(&bytes[start..start + row_bytes]);
+    }
+    out
+}
+
 fn make_opaque(data: &mut [u8]) {
     for pixel in data.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
@@ -143,8 +164,8 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
         .select_sources(
             &session,
             SelectSourcesOptions::default()
-                .set_cursor_mode(CursorMode::HIDDEN)
-                .set_sources(SourceType::MONITOR)
+                .set_cursor_mode(CursorMode::Hidden)
+                .set_sources(SourceType::Monitor)
                 .set_multiple(false)
                 .set_restore_token(None)
                 .set_persist_mode(PersistMode::DoNot),
@@ -166,7 +187,7 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
         .open_pipe_wire_remote(&session, Default::default())
         .await
         .map_err(|e| e.to_string())?;
-    Ok((stream.node_id, fd))
+    Ok((stream.pipe_wire_node_id(), fd))
 }
 
 /// Everything after the portal: PipeWire stream setup, format
@@ -326,7 +347,8 @@ fn run_stream(
     });
     timer
         .update_timer(Some(STOP_POLL), Some(STOP_POLL))
-        .map_err(|e| format!("failed to arm the loop timer: {e:?}"))?;
+        .into_result()
+        .map_err(|e| format!("failed to arm the loop timer: {e}"))?;
 
     let deadline = Instant::now() + FORMAT_TIMEOUT;
     while size.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
