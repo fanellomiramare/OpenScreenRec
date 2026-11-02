@@ -16,3 +16,6 @@ tracing = "0.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wasapi = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = "11"

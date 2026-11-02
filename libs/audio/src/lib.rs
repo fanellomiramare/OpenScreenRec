@@ -15,10 +15,12 @@
 pub mod cpal_source;
 pub mod wav;
 
-pub use wav::WavAudioWriter;
-
+#[cfg(target_os = "macos")]
+pub mod sck_audio;
 #[cfg(target_os = "windows")]
 pub mod wasapi_loopback;
+
+pub use wav::WavAudioWriter;
 
 use std::time::Duration;
 
@@ -110,13 +112,29 @@ pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> 
     Ok(Box::new(wasapi_loopback::WasapiLoopbackSource::new()?))
 }
 
+/// Create a capture source for everything the user hears (ScreenCaptureKit).
+#[cfg(target_os = "macos")]
+pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> {
+    Ok(Box::new(sck_audio::SckSystemAudioSource::new()?))
+}
+
 /// Create a capture source for everything the user hears.
 ///
-/// System audio lands on macOS in M4 and on Linux in M5.
-#[cfg(not(target_os = "windows"))]
+/// System audio lands on Linux in M5.
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> {
     Err(AudioError::Unsupported(
-        "system audio lands on macOS in M4 and on Linux in M5".into(),
+        "system audio lands on Linux in M5".into(),
+    ))
+}
+
+/// Create a capture source for everything the user hears.
+///
+/// System audio lands on Linux in M5.
+#[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> {
+    Err(AudioError::Unsupported(
+        "system audio lands on Linux in M5".into(),
     ))
 }
 
