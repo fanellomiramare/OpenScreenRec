@@ -67,7 +67,8 @@ fn main() -> eframe::Result<()> {
             .with_decorations(false)
             .with_resizable(false)
             .with_always_on_top()
-            .with_inner_size(egui::vec2(app::TOOLBAR_SIZE[0], app::TOOLBAR_SIZE[1])),
+            .with_inner_size(egui::vec2(app::TOOLBAR_SIZE[0], app::TOOLBAR_SIZE[1]))
+            .with_icon(app::app_icon()),
         ..Default::default()
     };
 

@@ -29,6 +29,10 @@ use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use crate::controller::Controller;
 use crate::recorder::{AudioSelection, RecordRequest};
 
+/// The flat pastel record-dot icon (see tools/gen_icon.py).
+const ICON_APP_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
+const ICON_TRAY_PNG: &[u8] = include_bytes!("../assets/tray-32.png");
+
 pub const TOOLBAR_SIZE: [f32; 2] = [320.0, 88.0];
 const SETTINGS_SIZE: [f32; 2] = [320.0, 430.0];
 
@@ -125,7 +129,7 @@ pub fn create_tray() -> Result<TrayHandles, String> {
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("OpenScreenRec — F9 record, F10 pause")
-        .with_icon(red_dot_icon())
+        .with_icon(tray_icon_rgba())
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -140,25 +144,26 @@ pub fn create_tray() -> Result<TrayHandles, String> {
     })
 }
 
-/// A 32×32 red dot as the tray icon, drawn in code until we have a
-/// proper logo asset.
-fn red_dot_icon() -> tray_icon::Icon {
-    let (size, radius) = (32usize, 13.0f32);
-    let center = (size as f32 - 1.0) / 2.0;
-    let mut rgba = Vec::with_capacity(size * size * 4);
-    for y in 0..size {
-        for x in 0..size {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let (r, g, b, a) = if dx * dx + dy * dy <= radius * radius {
-                (226, 45, 45, 255)
-            } else {
-                (0, 0, 0, 0)
-            };
-            rgba.extend_from_slice(&[r, g, b, a]);
-        }
+/// The tray variant: the bare coral dot on transparency.
+fn tray_icon_rgba() -> tray_icon::Icon {
+    let image = image::load_from_memory(ICON_TRAY_PNG)
+        .expect("the embedded tray icon is a valid PNG")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    tray_icon::Icon::from_rgba(image.into_raw(), width, height).expect("static icon data is valid")
+}
+
+/// Decode an embedded PNG into the egui window icon.
+pub fn app_icon() -> egui::IconData {
+    let image = image::load_from_memory(ICON_APP_PNG)
+        .expect("the embedded app icon is a valid PNG")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    egui::IconData {
+        width,
+        height,
+        rgba: image.into_raw(),
     }
-    tray_icon::Icon::from_rgba(rgba, size as u32, size as u32).expect("static icon data is valid")
 }
 
 pub struct HotkeyHandles {

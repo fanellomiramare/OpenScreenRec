@@ -81,6 +81,7 @@ jobs:
             <key>CFBundleDisplayName</key><string>OpenScreenRec</string>
             <key>CFBundleIdentifier</key><string>com.fanellomiramare.openscreenrec</string>
             <key>CFBundleExecutable</key><string>OpenScreenRec</string>
+            <key>CFBundleIconFile</key><string>icon</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>${GITHUB_REF_NAME#v}</string>
             <key>LSMinimumSystemVersion</key><string>12.3</string>
@@ -90,6 +91,7 @@ jobs:
           </dict>
           </plist>
           PLIST
+          cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
           cp "target/release/${{ matrix.binary }}" "$APP/Contents/MacOS/OpenScreenRec"
 
           # Stable self-signed certificate when the secrets exist (TCC

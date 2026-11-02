@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/icon-256.png" width="96" alt="OpenScreenRec icon">
+</div>
+
 # OpenScreenRec
 
 [![CI](https://github.com/fanellomiramare/OpenScreenRec/actions/workflows/ci.yml/badge.svg)](https://github.com/fanellomiramare/OpenScreenRec/actions/workflows/ci.yml)
