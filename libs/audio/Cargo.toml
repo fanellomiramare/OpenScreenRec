@@ -1,6 +1,6 @@
 [package]
 name = "osr-audio"
-description = "Audio capture for OpenScreenRec: microphone + system loopback, mixing, A/V sync."
+description = "Audio capture for OpenScreenRec: microphone + system loopback, temp WAV writing."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,4 +8,11 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+cpal = { workspace = true }
+hound = { workspace = true }
 osr-common = { workspace = true }
+thiserror = { workspace = true }
+tracing = "0.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wasapi = { workspace = true }

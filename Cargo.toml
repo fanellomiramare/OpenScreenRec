@@ -23,6 +23,9 @@ osr-encode = { path = "libs/encode" }
 osr-mux = { path = "libs/mux" }
 thiserror = "2"
 chrono = "0.4"
+cpal = "0.18"
+wasapi = "0.26"
+hound = "3"
 
 [package]
 name = "openscreenrec"
@@ -36,6 +39,7 @@ publish.workspace = true
 [dependencies]
 eframe = "0.37"
 osr-capture = { workspace = true }
+osr-audio = { workspace = true }
 osr-common = { workspace = true }
 osr-encode = { workspace = true }
 tracing = "0.1"
