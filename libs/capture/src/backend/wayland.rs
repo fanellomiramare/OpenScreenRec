@@ -208,7 +208,7 @@ fn run_stream(
         .map_err(|e| format!("tokio runtime failed: {e}"))?;
     let (node_id, fd) = runtime.block_on(open_portal())?;
 
-    let mainloop = Arc::new(MainLoopBox::new(None).map_err(|e| e.to_string())?);
+    let mainloop = MainLoopBox::new(None).map_err(|e| e.to_string())?;
     let context = ContextBox::new(mainloop.loop_(), None).map_err(|e| e.to_string())?;
     let core = context.connect_fd(fd, None).map_err(|e| e.to_string())?;
 
