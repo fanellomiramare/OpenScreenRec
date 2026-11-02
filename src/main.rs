@@ -1,7 +1,7 @@
 //! OpenScreenRec — a free and open-source screen recorder, 100% Rust.
 //!
-//! M1 build: primary-monitor video capture (Windows) → MP4 via the
-//! FFmpeg pipe encoder. Audio and the full control UX land in M2–M3.
+//! M2 build: primary-monitor video capture (Windows) with microphone
+//! and/or system audio, pause/resume, MP4 via the FFmpeg pipe encoder.
 
 mod recorder;
 
@@ -10,7 +10,7 @@ use std::time::Duration;
 use eframe::egui;
 use osr_encode::VideoCodec;
 
-use recorder::RecordRequest;
+use recorder::{AudioSelection, RecordRequest};
 
 /// Frames per second used until the settings UI lands (M3).
 const DEFAULT_FPS: u32 = 30;
@@ -36,8 +36,8 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([460.0, 300.0])
-            .with_min_inner_size([380.0, 240.0]),
+            .with_inner_size([460.0, 320.0])
+            .with_min_inner_size([380.0, 260.0]),
         ..Default::default()
     };
 
@@ -48,8 +48,8 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-/// `--smoke-record [seconds]`: record the primary monitor headlessly
-/// (no UI) and exit. Used as an end-to-end pipeline check.
+/// `--smoke-record [seconds]`: record the primary monitor (with system
+/// audio) headlessly and exit. Used as an end-to-end pipeline check.
 fn smoke_record_seconds() -> Option<u64> {
     let args: Vec<String> = std::env::args().collect();
     let position = args.iter().position(|arg| arg == "--smoke-record")?;
@@ -69,9 +69,10 @@ fn smoke_record(seconds: u64) -> Result<(), String> {
         fps: DEFAULT_FPS,
         codec: VideoCodec::H264,
         output,
+        audio: AudioSelection::System,
     };
     let session = recorder::start(request)?;
-    println!("Recording the primary monitor for {seconds}s...");
+    println!("Recording the primary monitor (with system audio) for {seconds}s...");
     std::thread::sleep(Duration::from_secs(seconds));
     let path = session.join()?;
     let size = std::fs::metadata(&path)
@@ -88,9 +89,20 @@ fn smoke_record(seconds: u64) -> Result<(), String> {
 struct App {
     session: Option<recorder::Session>,
     status: Option<String>,
+    microphone: bool,
+    system_audio: bool,
 }
 
 impl App {
+    fn audio_selection(&self) -> AudioSelection {
+        match (self.microphone, self.system_audio) {
+            (true, true) => AudioSelection::Both,
+            (true, false) => AudioSelection::Microphone,
+            (false, true) => AudioSelection::System,
+            (false, false) => AudioSelection::None,
+        }
+    }
+
     fn default_output_path() -> String {
         let dir = osr_common::default_recordings_dir().unwrap_or_else(std::env::temp_dir);
         dir.join(osr_common::timestamped_recording_name(".mp4"))
@@ -104,6 +116,7 @@ impl App {
             fps: DEFAULT_FPS,
             codec: VideoCodec::H264,
             output: Self::default_output_path().into(),
+            audio: self.audio_selection(),
         };
         match recorder::start(request) {
             Ok(session) => {
@@ -147,22 +160,44 @@ impl eframe::App for App {
 
             match &mut self.session {
                 Some(session) => {
+                    let state = if session.is_paused() { "⏸" } else { "●" };
                     ui.label(format!(
-                        "● Recording — {:.0}s @ {} fps",
-                        session.elapsed().as_secs_f32(),
+                        "{state} Recording — {:.0}s @ {} fps",
+                        session.recorded_elapsed().as_secs_f32(),
                         DEFAULT_FPS
                     ));
                     ui.weak(format!("→ {}", session.output().display()));
                     ui.add_space(8.0);
-                    if ui.button("⏹ Stop").clicked() {
-                        session.request_stop();
-                    }
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(if session.is_paused() {
+                                "▶ Resume"
+                            } else {
+                                "⏸ Pause"
+                            })
+                            .clicked()
+                        {
+                            if session.is_paused() {
+                                session.resume();
+                            } else {
+                                session.pause();
+                            }
+                        }
+                        if ui.button("⏹ Stop").clicked() {
+                            session.request_stop();
+                        }
+                    });
                     ui.ctx().request_repaint_after(Duration::from_millis(200));
                 }
                 None => {
                     if ui.button("● Record primary monitor").clicked() {
                         self.start_recording();
                     }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.microphone, "Microphone");
+                        ui.checkbox(&mut self.system_audio, "System audio");
+                    });
                     ui.weak(format!("{} fps → Videos folder", DEFAULT_FPS));
                 }
             }
