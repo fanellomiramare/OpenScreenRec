@@ -286,10 +286,7 @@ fn run_stream(
             *pump.format.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(negotiated.as_raw() as i32);
             if negotiated == VideoFormat::BGRx {
-                pump.report_size((
-                    info.size().width.max(0) as u32,
-                    info.size().height.max(0) as u32,
-                ));
+                pump.report_size((info.size().width, info.size().height));
             } else {
                 pump.warn_once(&format!(
                     "compositor negotiated {negotiated:?} instead of BGRx; frames will be dropped"
