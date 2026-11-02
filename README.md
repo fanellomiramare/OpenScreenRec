@@ -24,8 +24,8 @@
 
 | Package              | Status              |
 | -------------------- | ------------------- |
-| Installer (`.exe`)   | coming with **M5**  |
-| Portable (`.zip`)    | coming with **M5**  |
+| Installer (`.exe`)   | ready (NSIS)        |
+| Portable (`.zip`)    | ready               |
 
 ### macOS
 
@@ -33,16 +33,18 @@
 | ----------------------------- | -------------------------------------------------- |
 | Apple Silicon (`.dmg`)        | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
 | Intel (`.dmg`)                | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
-| Homebrew Cask                 | planned (**M5**) — no Gatekeeper prompt at all     |
+| Homebrew Cask                 | cask in [packaging/](packaging/openscreenrec.rb) — no Gatekeeper prompt at all |
 
 ### Linux
 
-| Package            | Status              |
-| ------------------ | ------------------- |
-| AppImage           | coming with **M5**  |
-| `.deb` / `.rpm`    | coming with **M5**  |
-| Flatpak            | planned             |
-| AUR                | planned             |
+| Package            | Status                                                |
+| ------------------ | ----------------------------------------------------- |
+| AppImage           | ready — bundles its libraries                         |
+| `.deb` / `.rpm`    | ready — requires FFmpeg on PATH (`Recommends`/deps)   |
+| Flatpak            | planned                                               |
+| AUR                | planned                                               |
+
+Linux captures through **X11** (any desktop) or the **desktop portal** (Wayland — GNOME/KDE show the source-picker dialog; needs `xdg-desktop-portal` and PipeWire, standard on modern distros).
 
 ## Build from source
 
@@ -70,8 +72,8 @@ target\release\openscreenrec.exe      # Windows
 | **M2**    | Microphone + system audio, A/V sync, pause                                  | ✅     |
 | **M3**    | Floating toolbar, hotkeys, tray, region picker — **MVP complete**           | ✅     |
 | **M4**    | macOS backend (ScreenCaptureKit, permissions, TCC, .dmg)                    | ✅     |
-| **M5**    | Linux backend (X11 / Wayland portal) + installers for all three OS          | 🚧     |
-| **M6**    | Hardware encoders, window capture, audio tracks, GIF/WebM, replay buffer, webcam PiP | |
+| **M5**    | Linux backend (X11 / Wayland portal) + installers for all three OS          | ✅     |
+| **M6**    | Hardware encoders, window capture, audio tracks, GIF/WebM, replay buffer, webcam PiP | 🚧 |
 
 ## Repository layout
 

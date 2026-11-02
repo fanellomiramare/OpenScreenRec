@@ -46,14 +46,16 @@ jobs:
             ext: .tar.gz
     steps:
       - uses: actions/checkout@v4
-      - name: Install Linux build dependencies (ALSA for cpal)
+      - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libpulse-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
 
-      - name: Package (Windows)
+      - name: Package (Windows — portable zip)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -62,6 +64,18 @@ jobs:
           Copy-Item "target/release/${{ matrix.binary }}" $dir/
           Copy-Item README.md, LICENSE $dir/
           Compress-Archive -Path $dir -DestinationPath "${{ matrix.artifact-name }}.zip"
+
+      - name: Package (Windows — NSIS installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          makensis "/DAPP_VERSION=$version" `
+            "/DEXE_PATH=target\release\${{ matrix.binary }}" `
+            "/DLICENSE_PATH=LICENSE" "/DREADME_PATH=README.md" `
+            "/DOUT_DIR=dist" packaging\windows.nsi
 
       - name: Package (macOS — .app bundle + .dmg)
         if: runner.os == 'MacOS'
@@ -114,7 +128,12 @@ jobs:
           hdiutil create -volname OpenScreenRec -srcfolder dist -ov -format UDZO \
             "${{ matrix.artifact-name }}.dmg"
 
-      - name: Package (Linux)
+          # Homebrew cask maintenance (packaging/openscreenrec.rb):
+          # print the checksum for the tap update after each release.
+          echo "sha256 (${{ matrix.artifact-name }}.dmg):" >> "$GITHUB_STEP_SUMMARY"
+          shasum -a 256 "${{ matrix.artifact-name }}.dmg" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package (Linux — tar.gz)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist/${{ matrix.artifact-name }}
@@ -122,6 +141,53 @@ jobs:
           cp README.md LICENSE dist/${{ matrix.artifact-name }}/
           tar -czf ${{ matrix.artifact-name }}.tar.gz -C dist ${{ matrix.artifact-name }}
 
+      - name: Package (Linux — deb)
+        if: runner.os == 'Linux'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p deb/DEBIAN deb/usr/bin deb/usr/share/applications deb/usr/share/icons/hicolor/256x256/apps
+          cat > deb/DEBIAN/control <<CTL
+          Package: openscreenrec
+          Version: $VERSION
+          Section: video
+          Priority: optional
+          Architecture: amd64
+          Maintainer: fanellomiramare <fanellomiramare@users.noreply.github.com>
+          Depends: libpulse0, libasound2 | libasound2t64, libpipewire-0.3-0
+          Recommends: ffmpeg
+          Description: Free and open-source screen recorder
+           100% Rust, cross-platform screen recorder. Encoding is done by an
+           external FFmpeg binary.
+          CTL
+          cp target/release/openscreenrec deb/usr/bin/
+          cp packaging/openscreenrec.desktop deb/usr/share/applications/
+          cp assets/icon-256.png deb/usr/share/icons/hicolor/256x256/apps/openscreenrec.png
+          dpkg-deb --build deb openscreenrec-linux-x64.deb
+
+      - name: Package (Linux — rpm)
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-generate-rpm --locked
+          cargo generate-rpm
+          mv target/generate-rpm/openscreenrec-*.rpm openscreenrec-linux-x64.rpm
+
+      - name: Package (Linux — AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp target/release/openscreenrec AppDir/usr/bin/
+          cp packaging/openscreenrec.desktop AppDir/
+          cp assets/icon-256.png AppDir/openscreenrec.png
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          mv OpenScreenRec-*.AppImage openscreenrec-linux-x64.AppImage
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact-name }}${{ matrix.ext }}
+          files: |
+            ${{ matrix.artifact-name }}${{ matrix.ext }}
+            openscreenrec-setup.exe
+            openscreenrec-linux-x64.AppImage
+            openscreenrec-linux-x64.deb
+            openscreenrec-linux-x64.rpm

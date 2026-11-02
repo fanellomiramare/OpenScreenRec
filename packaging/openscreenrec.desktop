@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenScreenRec
+GenericName=Screen Recorder
+Comment=Free and open-source screen recorder, 100% Rust
+Exec=openscreenrec
+Icon=openscreenrec
+Categories=AudioVideo;Video;Recorder;
+Terminal=false

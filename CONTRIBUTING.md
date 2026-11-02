@@ -10,7 +10,7 @@ Requirements:
 - Platform notes:
   - **Windows**: MSVC build tools (Visual Studio Build Tools with "Desktop development with C++")
   - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-  - **Linux**: a standard distro toolchain **plus ALSA development files** (Debian/Ubuntu: `sudo apt install libasound2-dev`; Fedora: `alsa-lib-devel`; Arch: `alsa-lib`) — required by the audio backend
+  - **Linux**: a standard distro toolchain **plus the audio/video development packages** — Debian/Ubuntu: `sudo apt install libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libpulse-dev`; Fedora: `alsa-lib-devel pipewire-devel pulseaudio-libs`; Arch: `alsa-lib pipewire libpulse`. X11 capture is pure Rust; `xvfb` + `x11-apps` enable the functional X11 test locally.
 
 Get started:
 
