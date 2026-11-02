@@ -70,16 +70,7 @@ impl SCStreamOutputTrait for SckHandler {
             Some(crop) => (
                 crop.width,
                 crop.height,
-                copy_cropped(
-                    base,
-                    stride,
-                    display_width,
-                    display_height,
-                    crop.x,
-                    crop.y,
-                    crop.width,
-                    crop.height,
-                ),
+                copy_cropped(base, stride, display_width, display_height, crop),
             ),
         };
         drop(guard);
@@ -107,7 +98,18 @@ fn copy_packed(base: *const u8, stride: usize, width: u32, height: u32) -> Vec<u
         let len = row_bytes * height as usize;
         return unsafe { std::slice::from_raw_parts(base, len) }.to_vec();
     }
-    copy_cropped(base, stride, width, height, 0, 0, width, height)
+    copy_cropped(
+        base,
+        stride,
+        width,
+        height,
+        Crop {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        },
+    )
 }
 
 fn copy_cropped(
@@ -115,11 +117,14 @@ fn copy_cropped(
     stride: usize,
     display_width: u32,
     display_height: u32,
-    crop_x: u32,
-    crop_y: u32,
-    crop_width: u32,
-    crop_height: u32,
+    crop: Crop,
 ) -> Vec<u8> {
+    let Crop {
+        x: crop_x,
+        y: crop_y,
+        width: crop_width,
+        height: crop_height,
+    } = crop;
     let Some(last_x) = crop_x.checked_add(crop_width) else {
         return Vec::new();
     };
@@ -165,7 +170,7 @@ impl SckSource {
         // CoreGraphics — available on every macOS version, unlike the
         // crate's macos_14-gated `point_pixel_scale`.
         let filter = SCContentFilter::create()
-            .with_display(&display)
+            .with_display(display)
             .with_excluding_windows(&[])
             .build()
             .map_err(|e| CaptureError::Start(format!("content filter failed: {e}")))?;
@@ -266,9 +271,9 @@ impl Drop for SckSource {
     }
 }
 
-/// Screen-recording permission (TCC) and display geometry, via
-/// CoreGraphics. Preflight returns without prompting; request triggers
-/// the system prompt (and opens the Privacy pane on recent versions).
+// Screen-recording permission (TCC) and display geometry, via
+// CoreGraphics. Preflight returns without prompting; request triggers
+// the system prompt (and opens the Privacy pane on recent versions).
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
