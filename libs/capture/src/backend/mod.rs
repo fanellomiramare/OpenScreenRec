@@ -1,19 +1,24 @@
 //! Platform capture backends.
 //!
-//! One module per OS, compiled only where it applies. Every backend
-//! implements [`crate::FrameSource`]; the application picks a backend
-//! through this module's factories — never through `#[cfg]` in UI code.
+//! One module per OS (and per Linux display server), compiled only
+//! where it applies. Every backend implements [`crate::FrameSource`];
+//! the application picks a backend through this module's factories —
+//! never through `#[cfg]` in UI code.
 //!
 //! References: the backend design follows the crate structure of
 //! [`windows-capture`](https://github.com/NiiightmareXD/windows-capture)
 //! (Windows), [`screencapturekit`](https://github.com/svtslf/screencapturekit)
-//! (macOS, planned) and [`scap`](https://github.com/CapSoftware/scap)
-//! (cross-platform model). All MIT or Apache-2.0 licensed.
+//! (macOS), and the official [`ashpd`](https://github.com/bilelmoussaoui/ashpd)
+//! screencast example (Wayland). All MIT or Apache-2.0 licensed.
 
 #[cfg(target_os = "macos")]
 mod sck;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod wayland;
 #[cfg(target_os = "windows")]
 mod wgc;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod x11;
 
 #[cfg(target_os = "windows")]
 pub const BACKEND_NAME: &str = "windows-graphics-capture";
@@ -22,7 +27,7 @@ pub const BACKEND_NAME: &str = "windows-graphics-capture";
 pub const BACKEND_NAME: &str = "screen-capture-kit";
 
 #[cfg(all(unix, not(target_os = "macos")))]
-pub const BACKEND_NAME: &str = "x11 / pipewire-portal (M5)";
+pub const BACKEND_NAME: &str = "x11-getimage / wayland-portal";
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
 pub const BACKEND_NAME: &str = "unsupported";
@@ -51,8 +56,15 @@ pub fn request_screen_recording_permission() -> bool {
     true
 }
 
+/// Is this session running under Wayland? Decides which Linux backend
+/// handles the capture (X11 is the fallback when DISPLAY is set).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn session_is_wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 /// Create a [`FrameSource`] for any supported [`CaptureTarget`].
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", unix))]
 pub fn create_capture_source(
     target: &crate::CaptureTarget,
     fps: u32,
@@ -72,13 +84,13 @@ pub fn create_capture_source(
 }
 
 /// Create a [`FrameSource`] for any supported [`CaptureTarget`].
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
 pub fn create_capture_source(
     _target: &crate::CaptureTarget,
     _fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
     Err(crate::CaptureError::Unsupported(
-        "capture lands on Linux in M5".into(),
+        "capture is not supported on this platform".into(),
     ))
 }
 
@@ -105,15 +117,21 @@ pub fn create_monitor_source(
     Ok(Box::new(sck::SckSource::new(monitor_id, fps)?))
 }
 
-/// Monitor capture lands on Linux in M5.
+/// Linux: Wayland goes through the portal (the user picks the source in
+/// the compositor dialog), X11 grabs the whole desktop off the root
+/// window.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_monitor_source(
-    _monitor_id: usize,
-    _fps: u32,
+    monitor_id: usize,
+    fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
-    Err(crate::CaptureError::Unsupported(
-        "monitor capture lands on Linux in M5".into(),
-    ))
+    if session_is_wayland() {
+        tracing::info!("Wayland session detected: using the desktop portal");
+        Ok(Box::new(wayland::WaylandSource::new(monitor_id, fps)?))
+    } else {
+        tracing::info!("X11 session detected: using XGetImage");
+        Ok(Box::new(x11::X11Source::new(monitor_id, fps)?))
+    }
 }
 
 /// Create a [`FrameSource`] for a rectangle in primary-monitor-local
@@ -146,18 +164,26 @@ pub fn create_region_source(
     )?))
 }
 
-/// Region capture lands on Linux in M5.
+/// Linux: same dispatch as monitors; regions crop the frames.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_region_source(
-    _x: i32,
-    _y: i32,
-    _width: u32,
-    _height: u32,
-    _fps: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    fps: u32,
 ) -> Result<Box<dyn crate::FrameSource>, crate::CaptureError> {
-    Err(crate::CaptureError::Unsupported(
-        "region capture lands on Linux in M5".into(),
-    ))
+    if session_is_wayland() {
+        tracing::info!("Wayland session detected: using the desktop portal");
+        Ok(Box::new(wayland::WaylandSource::new_region(
+            x, y, width, height, fps,
+        )?))
+    } else {
+        tracing::info!("X11 session detected: using XGetImage");
+        Ok(Box::new(x11::X11Source::new_region(
+            x, y, width, height, fps,
+        )?))
+    }
 }
 
 #[cfg(test)]

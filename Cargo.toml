@@ -59,6 +59,18 @@ rfd = { workspace = true }
 name = "openscreenrec"
 path = "src/main.rs"
 
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/openscreenrec", dest = "/usr/bin/openscreenrec", mode = "755" },
+    { source = "packaging/openscreenrec.desktop", dest = "/usr/share/applications/openscreenrec.desktop", mode = "644" },
+    { source = "assets/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/openscreenrec.png", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+alsa-lib = "*"
+pipewire-libs = "*"
+pulseaudio-libs = "*"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
