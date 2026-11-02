@@ -1,6 +1,6 @@
 [package]
 name = "osr-common"
-description = "Shared utilities for OpenScreenRec: config types, well-known paths, small helpers."
+description = "Shared utilities for OpenScreenRec: config types, well-known paths, pipeline clock, A/V frame types."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,4 +8,5 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono = { workspace = true }
 dirs = "6"
