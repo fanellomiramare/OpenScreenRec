@@ -10,7 +10,7 @@ Requirements:
 - Platform notes:
   - **Windows**: MSVC build tools (Visual Studio Build Tools with "Desktop development with C++")
   - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-  - **Linux**: a standard distro toolchain
+  - **Linux**: a standard distro toolchain **plus ALSA development files** (Debian/Ubuntu: `sudo apt install libasound2-dev`; Fedora: `alsa-lib-devel`; Arch: `alsa-lib`) — required by the audio backend
 
 Get started:
 
