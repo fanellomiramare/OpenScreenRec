@@ -7,7 +7,7 @@
 //! GPU Screen Recorder drive external encoders.
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
@@ -123,6 +123,85 @@ impl FfmpegPipeEncoder {
         .trim()
         .to_string()
     }
+}
+
+/// Combine the recorded video with one or two recorded WAV files into
+/// the final MP4.
+///
+/// Video is stream-copied (instant), audio is encoded to AAC. With two
+/// WAVs (microphone + system) they are mixed with `amix`; rate and
+/// channel-layout differences are normalized by `aformat` first.
+/// `-shortest` trims trailing silence when the audio outlives the video.
+pub fn mux_video_with_wav(
+    video: &Path,
+    audio: &[&Path],
+    output: &Path,
+) -> Result<PathBuf, EncodeError> {
+    if audio.is_empty() {
+        return Err(EncodeError::Input(
+            "muxing requires at least one audio file".into(),
+        ));
+    }
+    let Some(ffmpeg) = FfmpegPipeEncoder::ffmpeg_binary() else {
+        return Err(EncodeError::Process(
+            "ffmpeg not found — install it or point OSR_FFMPEG_PATH at the binary".into(),
+        ));
+    };
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut command = Command::new(ffmpeg);
+    command
+        .args(["-hide_banner", "-loglevel", "error", "-y"])
+        .arg("-i")
+        .arg(video);
+    for wav in audio {
+        command.arg("-i").arg(wav);
+    }
+    match audio.len() {
+        1 => {
+            command.args(["-map", "0:v:0"]);
+            command.args(["-map", "1:a:0"]);
+        }
+        2 => {
+            command.args(["-filter_complex", "[1:a]aformat=sample_rates=48000:channel_layouts=stereo[a1];[2:a]aformat=sample_rates=48000:channel_layouts=stereo[a2];[a1][a2]amix=inputs=2:normalize=0[aout]"]);
+            command.args(["-map", "0:v:0"]);
+            command.args(["-map", "[aout]"]);
+        }
+        n => {
+            return Err(EncodeError::Input(format!(
+                "mixing more than two audio tracks is not supported yet: {n}"
+            )));
+        }
+    }
+    command
+        .args(["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"])
+        .args(["-shortest", "-movflags", "+faststart"])
+        .arg(output)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| EncodeError::Process(format!("failed to spawn ffmpeg: {e}")))?;
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        // Short-lived process with error-level logging: reading after
+        // wait cannot deadlock in practice.
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    let status = child
+        .wait()
+        .map_err(|e| EncodeError::Process(format!("failed to wait for ffmpeg: {e}")))?;
+    if !status.success() {
+        return Err(EncodeError::Process(format!(
+            "ffmpeg mux exited with {status}: {}",
+            stderr.trim()
+        )));
+    }
+    Ok(output.to_path_buf())
 }
 
 impl VideoEncoder for FfmpegPipeEncoder {
@@ -243,6 +322,62 @@ mod tests {
 
         let len = std::fs::metadata(&path).expect("output file exists").len();
         assert!(len > 1_000, "suspiciously small MP4: {len} bytes");
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn mux_combines_video_and_wav() {
+        if !ffmpeg_available() {
+            eprintln!("skipping: ffmpeg is not available on this runner");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("osr-mux-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("video.mp4");
+        let wav = dir.join("audio.wav");
+        let output = dir.join("final.mp4");
+
+        // One second of 320x240@10 video.
+        let settings = VideoSettings {
+            width: 320,
+            height: 240,
+            fps: 10,
+            codec: VideoCodec::H264,
+            bitrate_bps: None,
+        };
+        let mut encoder = FfmpegPipeEncoder::new(settings, &video).expect("encoder starts");
+        for i in 0..10u32 {
+            let frame = VideoFrame {
+                pts_us: u64::from(i) * 100_000,
+                width: 320,
+                height: 240,
+                stride: 320 * 4,
+                format: FrameFormat::Bgra8,
+                data: vec![i as u8; 320 * 240 * 4],
+            };
+            encoder.write_frame(&frame).expect("frame written");
+        }
+        encoder.finish().expect("video finalized");
+
+        // One second of 48 kHz stereo silence.
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&wav, spec).unwrap();
+        for _ in 0..48_000 * 2 {
+            writer.write_sample(0i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let path = mux_video_with_wav(&video, &[&wav], &output).expect("mux succeeds");
+        assert_eq!(path, output);
+        let len = std::fs::metadata(&path).expect("output exists").len();
+        assert!(len > 1_000, "suspiciously small output: {len} bytes");
 
         std::fs::remove_dir_all(dir).ok();
     }
