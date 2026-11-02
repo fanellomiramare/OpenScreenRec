@@ -6,6 +6,7 @@
 //! crate (`osr-capture`, `osr-audio`, ...).
 
 pub mod frame;
+pub mod settings;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
