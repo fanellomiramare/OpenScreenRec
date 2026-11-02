@@ -195,7 +195,7 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
 /// in the main loop until the stop flag fires (a repeating timer quits
 /// the loop from inside).
 fn run_stream(
-    stop: &AtomicBool,
+    stop: &Arc<AtomicBool>,
     tx: SyncSender<VideoFrame>,
     init_tx: std::sync::mpsc::Sender<Result<(u32, u32), String>>,
     crop: Option<Crop>,
