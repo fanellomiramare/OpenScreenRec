@@ -344,7 +344,6 @@ fn run_stream(
     // The main loop runs until the timer callback sees the stop flag and
     // quits it; events (format, frames) are processed meanwhile, which is
     // what unblocks the constructor waiting on the init channel.
-    let quit_loop = Arc::clone(&mainloop);
     let stop_for_timer = Arc::clone(stop);
     let timer = mainloop.loop_().add_timer(move |_| {
         if stop_for_timer.load(Ordering::Relaxed) {
