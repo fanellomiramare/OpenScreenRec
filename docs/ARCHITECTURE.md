@@ -21,14 +21,21 @@ All A/V timestamps live on one monotonic microsecond clock, which makes mixing, 
 
 ## Crates
 
-| Crate                      | Responsibility                                     |
-| -------------------------- | -------------------------------------------------- |
-| `openscreenrec` (`src/`)   | egui application: UI, hotkeys, tray, orchestration |
-| `osr-common`               | config types, well-known paths, small helpers      |
-| `osr-capture`              | `FrameSource` trait + per-OS capture backends      |
-| `osr-audio`                | mic & system-loopback capture, mixing              |
-| `osr-encode`               | video/audio compression                            |
-| `osr-mux`                  | container writing (MP4, MKV/WebM)                  |
+| Crate                      | Responsibility                                                      |
+| -------------------------- | ------------------------------------------------------------------- |
+| `openscreenrec` (`src/`)   | egui application: UI, hotkeys, tray, orchestration                  |
+| `osr-common`               | config types, well-known paths, pipeline clock, shared A/V types    |
+| `osr-capture`              | `FrameSource` trait + per-OS capture backends                       |
+| `osr-audio`                | mic & system-loopback capture, mixing                               |
+| `osr-encode`               | video/audio compression                                             |
+| `osr-mux`                  | container writing (MP4, MKV/WebM)                                   |
+
+## Current status (M1)
+
+- **Windows**: live — Windows Graphics Capture via `windows-capture`, monitor capture at a configurable FPS.
+- **Encoder**: live — the FFmpeg pipe encoder (`osr-encode::ffmpeg`) turns BGRA frames into MP4 (H.264); the binary is external, so no license is inherited.
+- **macOS / Linux**: capture backends are stubs reporting `Unsupported` until M4/M5; the encoder and pipeline are already platform-neutral.
+- The recorder holds a constant output FPS by duplicating the last frame when the screen doesn't repaint — durations match wall-clock time on static screens.
 
 ## Per-OS plan
 

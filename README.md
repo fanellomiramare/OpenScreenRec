@@ -61,8 +61,8 @@ target\release\openscreenrec.exe      # Windows
 | Milestone | Scope                                                                       | Status |
 | --------- | --------------------------------------------------------------------------- | ------ |
 | **M0**    | Workspace, CI on 3 OS, licensing, docs, release automation                  | ✅     |
-| **M1**    | Video capture (Windows first) → MP4 via FFmpeg pipe                         | 🚧     |
-| **M2**    | Microphone + system audio, A/V sync, pause                                  |        |
+| **M1**    | Video capture (Windows first) → MP4 via FFmpeg pipe                         | ✅     |
+| **M2**    | Microphone + system audio, A/V sync, pause                                  | 🚧     |
 | **M3**    | Floating toolbar, hotkeys, tray, region picker — **MVP complete**           |        |
 | **M4**    | macOS backend (ScreenCaptureKit, permissions, TCC)                          |        |
 | **M5**    | Linux backend (X11 / Wayland portal) + installers for all three OS          |        |
