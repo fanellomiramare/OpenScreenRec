@@ -46,8 +46,6 @@ const CHANNEL_CAPACITY: usize = 8;
 const INIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the compositor gets to fixate a video format.
 const FORMAT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Timer tick that checks the stop flag while the main loop runs.
-const STOP_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug)]
 struct Crop {
@@ -340,20 +338,6 @@ fn run_stream(
             &mut params,
         )
         .map_err(|e| format!("failed to connect the PipeWire stream: {e}"))?;
-
-    // The main loop runs until the timer callback sees the stop flag and
-    // quits it; events (format, frames) are processed meanwhile, which is
-    // what unblocks the constructor waiting on the init channel.
-    let stop_for_timer = Arc::clone(stop);
-    let timer = mainloop.loop_().add_timer(move |_| {
-        if stop_for_timer.load(Ordering::Relaxed) {
-            quit_loop.quit();
-        }
-    });
-    timer
-        .update_timer(Some(STOP_POLL), Some(STOP_POLL))
-        .into_result()
-        .map_err(|e| format!("failed to arm the loop timer: {e}"))?;
 
     let deadline = Instant::now() + FORMAT_TIMEOUT;
     while size.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
