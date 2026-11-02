@@ -15,7 +15,8 @@
 //!
 //! Only `BGRx` is negotiated, matching the BGRA frames the rest of the
 //! pipeline expects (the fourth byte is left undefined by the format,
-//! exactly like X11, and made opaque here).
+//! exactly like X11, and made opaque here). Reference: the official
+//! `screen_cast_pw.rs` example in the ashpd repository.
 
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
@@ -28,10 +29,11 @@ use ashpd::desktop::screencast::{
     CursorMode, PersistMode, Screencast, SelectSourcesOptions, SourceType,
 };
 use pipewire as pw;
-use pw::prelude::*;
 use pw::spa::param::format_utils;
 use pw::spa::param::video::VideoFormat;
-use pw::spa::pod::property;
+use pw::spa::pod::Pod;
+use pw::spa::utils::SpaTypes;
+use pw::{context::ContextBox, main_loop::MainLoopBox, properties::properties, stream::StreamBox};
 
 use crate::{CaptureError, FrameFormat, FrameSource};
 use osr_common::frame::VideoFrame;
@@ -43,6 +45,8 @@ const CHANNEL_CAPACITY: usize = 8;
 const INIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the compositor gets to fixate a video format.
 const FORMAT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timer tick that checks the stop flag while the main loop runs.
+const STOP_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug)]
 struct Crop {
@@ -56,7 +60,10 @@ struct Crop {
 struct Pump {
     tx: SyncSender<VideoFrame>,
     crop: Option<Crop>,
+    /// Negotiated geometry, published once via `init_tx` and kept for
+    /// the process callback.
     size: Arc<std::sync::Mutex<Option<(u32, u32)>>>,
+    /// The negotiated format fourcc, mirrored for the process callback.
     format: Arc<std::sync::Mutex<Option<i32>>>,
     init_tx: std::sync::mpsc::Sender<Result<(u32, u32), String>>,
     warned_format: AtomicU8,
@@ -68,6 +75,12 @@ impl Pump {
         if slot.is_none() {
             *slot = Some(size);
             let _ = self.init_tx.send(Ok(size));
+        }
+    }
+
+    fn warn_once(&self, message: &str) {
+        if self.warned_format.swap(1, Ordering::Relaxed) == 0 {
+            tracing::warn!("{message}");
         }
     }
 }
@@ -99,29 +112,11 @@ fn pump_frames(pump: &mut Pump, frame_bytes: &[u8], stride: usize, width: u32, h
     let _ = pump.tx.try_send(frame);
 }
 
-fn copy_packed(bytes: &[u8], stride: usize, width: u32, height: u32) -> Vec<u8> {
+fn copy_rows(bytes: &[u8], stride: usize, width: u32, first_row: u32, rows: u32) -> Vec<u8> {
     let row_bytes = width as usize * 4;
-    let mut out = Vec::with_capacity(row_bytes * height as usize);
-    for row in 0..height as usize {
-        let start = row * stride;
-        if start + row_bytes > bytes.len() {
-            break;
-        }
-        out.extend_from_slice(&bytes[start..start + row_bytes]);
-    }
-    out
-}
-
-fn copy_cropped(bytes: &[u8], stride: usize, width: u32, height: u32, crop: Crop) -> Vec<u8> {
-    let last_x = crop.x.saturating_add(crop.width);
-    let last_y = crop.y.saturating_add(crop.height);
-    if last_x > width || last_y > height {
-        return Vec::new();
-    }
-    let row_bytes = crop.width as usize * 4;
-    let mut out = Vec::with_capacity(row_bytes * crop.height as usize);
-    for row in crop.y..last_y {
-        let start = row as usize * stride + crop.x as usize * 4;
+    let mut out = Vec::with_capacity(row_bytes * rows as usize);
+    for row in first_row..first_row.saturating_add(rows) {
+        let start = row as usize * stride;
         if start + row_bytes > bytes.len() {
             break;
         }
@@ -171,11 +166,13 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
         .open_pipe_wire_remote(&session, Default::default())
         .await
         .map_err(|e| e.to_string())?;
-    Ok((stream.node_id(), fd))
+    Ok((stream.node_id, fd))
 }
 
 /// Everything after the portal: PipeWire stream setup, format
-/// negotiation and the frame pump. Runs on the capture thread.
+/// negotiation and the frame pump. Runs on the capture thread; blocks
+/// in the main loop until the stop flag fires (a repeating timer quits
+/// the loop from inside).
 fn run_stream(
     stop: &AtomicBool,
     tx: SyncSender<VideoFrame>,
@@ -190,15 +187,14 @@ fn run_stream(
         .map_err(|e| format!("tokio runtime failed: {e}"))?;
     let (node_id, fd) = runtime.block_on(open_portal())?;
 
-    let mainloop = pw::main_loop::MainLoopBox::new(None).map_err(|e| e.to_string())?;
-    let context =
-        pw::context::ContextBox::new(mainloop.loop_(), None).map_err(|e| e.to_string())?;
+    let mainloop = Arc::new(MainLoopBox::new(None).map_err(|e| e.to_string())?);
+    let context = ContextBox::new(mainloop.loop_(), None).map_err(|e| e.to_string())?;
     let core = context.connect_fd(fd, None).map_err(|e| e.to_string())?;
 
-    let stream = pw::stream::StreamBox::new(
+    let stream = StreamBox::new(
         &core,
         "openscreenrec",
-        pw::properties::properties! {
+        properties! {
             *pw::keys::MEDIA_TYPE => "Video",
             *pw::keys::MEDIA_CATEGORY => "Capture",
             *pw::keys::MEDIA_ROLE => "Screen",
@@ -207,7 +203,7 @@ fn run_stream(
     .map_err(|e| e.to_string())?;
 
     let size = Arc::new(std::sync::Mutex::new(None));
-    let format = Arc::new(std::sync::Mutex::new(None));
+    let format: Arc<std::sync::Mutex<Option<i32>>> = Arc::new(std::sync::Mutex::new(None));
     let mut pump = Pump {
         tx,
         crop,
@@ -219,19 +215,19 @@ fn run_stream(
 
     // Negotiate exactly one format: BGRx, native size, compositor-paced.
     let params_object = pw::spa::pod::object!(
-        pw::spa::utils::SpaTypes::ObjectParamFormat,
+        SpaTypes::ObjectParamFormat,
         pw::spa::param::ParamType::EnumFormat,
-        property!(
+        pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::MediaType,
             Id,
             pw::spa::param::format::MediaType::Video
         ),
-        property!(
+        pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::MediaSubtype,
             Id,
             pw::spa::param::format::MediaSubtype::Raw
         ),
-        property!(
+        pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::VideoFormat,
             Choice,
             Enum,
@@ -247,7 +243,7 @@ fn run_stream(
     .map_err(|e| e.to_string())?
     .0
     .into_inner();
-    let mut params = [pw::spa::pod::Pod::from_bytes(&values).map_err(|e| e.to_string())?];
+    let mut params = [Pod::from_bytes(&values).map_err(|e| e.to_string())?];
 
     let listener = stream
         .add_local_listener_with_user_data(&mut pump)
@@ -264,21 +260,22 @@ fn run_stream(
             {
                 return;
             }
-            if let Ok(info) = pw::spa::param::video::VideoInfoRaw::parse(param) {
-                let negotiated = info.format().as_raw();
-                *pump.format.lock().unwrap_or_else(|p| p.into_inner()) = Some(negotiated);
+            let mut info = pw::spa::param::video::VideoInfoRaw::default();
+            let _ = info.parse(param); // SpaSuccess carries nothing we need
+            let negotiated = info.format();
+            *pump.format.lock().unwrap_or_else(|p| p.into_inner()) = Some(negotiated.as_raw());
+            if negotiated == VideoFormat::BGRx {
                 pump.report_size((info.size().width, info.size().height));
+            } else {
+                pump.warn_once(&format!(
+                    "compositor negotiated {negotiated:?} instead of BGRx; frames will be dropped"
+                ));
             }
         })
         .process(|stream, pump| {
-            let negotiated = *pump.format.lock().unwrap_or_else(|p| p.into_inner());
-            if negotiated != Some(VideoFormat::BGRx.as_raw()) {
-                // We only ever offer BGRx; anything else means the
-                // compositor ignored the choice — say so once, skip.
-                if pump.warned_format.swap(1, Ordering::Relaxed) == 0 {
-                    tracing::warn!("compositor negotiated a non-BGRx format; dropping frames");
-                }
-                return;
+            let format = *pump.format.lock().unwrap_or_else(|p| p.into_inner());
+            if format != Some(VideoFormat::BGRx.as_raw()) {
+                return; // already warned once in param_changed
             }
             let Some(mut buffer) = stream.dequeue_buffer() else {
                 return; // out of buffers this tick
@@ -286,29 +283,24 @@ fn run_stream(
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
-            let chunk = data.chunk();
-            let (offset, size, stride) = (chunk.offset(), chunk.size(), chunk.stride());
-            let Some(bytes) = data.data() else { return };
-            let end = (offset + size).min(bytes.len());
-            if offset > end {
+            let Some(size) = *pump.size.lock().unwrap_or_else(|p| p.into_inner()) else {
                 return;
-            }
-            let (w, h) = pump
-                .size
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .unwrap_or((0, 0));
-            if w == 0 || h == 0 {
+            };
+            let chunk = data.chunk();
+            let (offset, size_bytes) = (chunk.offset() as usize, chunk.size() as usize);
+            let stride = if chunk.stride() > 0 {
+                chunk.stride() as usize
+            } else {
+                size.0 as usize * 4
+            };
+            let Some(bytes) = data.data() else { return };
+            let end = (offset + size_bytes).min(bytes.len());
+            if offset >= end {
                 return;
             }
             let mut frame_bytes = bytes[offset..end].to_vec();
             make_opaque(&mut frame_bytes);
-            let stride = if stride > 0 {
-                stride as usize
-            } else {
-                w as usize * 4
-            };
-            pump_frames(pump, &frame_bytes, stride, w, h);
+            pump_frames(pump, &frame_bytes, stride, size.0, size.1);
         })
         .register()
         .map_err(|e| e.to_string())?;
@@ -322,27 +314,42 @@ fn run_stream(
         )
         .map_err(|e| format!("failed to connect the PipeWire stream: {e}"))?;
 
-    // Pump the main loop until the compositor fixates the format, then
-    // report the size and keep pumping until stopped. `listener` must
-    // stay alive for the callbacks to fire, hence the binding.
+    // The main loop runs until the timer callback sees the stop flag and
+    // quits it; events (format, frames) are processed meanwhile, which is
+    // what unblocks the constructor waiting on the init channel.
+    let quit_loop = Arc::clone(&mainloop);
+    let stop_for_timer = Arc::clone(stop);
+    let timer = mainloop.loop_().add_timer(move |_| {
+        if stop_for_timer.load(Ordering::Relaxed) {
+            quit_loop.quit();
+        }
+    });
+    timer
+        .update_timer(Some(STOP_POLL), Some(STOP_POLL))
+        .map_err(|e| format!("failed to arm the loop timer: {e:?}"))?;
+
     let deadline = Instant::now() + FORMAT_TIMEOUT;
     while size.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
         if stop.load(Ordering::Relaxed) || Instant::now() > deadline {
+            timer.update_timer(None, None).ok();
+            mainloop.quit();
             return Err("the compositor did not negotiate a video format in time".into());
         }
-        mainloop.iterate(50);
+        std::thread::sleep(Duration::from_millis(50));
     }
     let size = size
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .expect("size checked above");
 
-    while !stop.load(Ordering::Relaxed) {
-        mainloop.iterate(100);
-    }
+    // Drive the loop on this thread until stop() quits it.
+    mainloop.run();
+
     let _ = listener; // keep the listener alive until the loop is done
-    let _ = core;
-    let _ = context;
+    drop(stream);
+    drop(core);
+    drop(context);
+    let _ = init_tx;
     Ok(size)
 }
 

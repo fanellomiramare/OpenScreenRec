@@ -317,6 +317,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "serde",
+ "serde_repr",
  "tokio",
  "zbus",
 ]
@@ -2941,6 +2942,7 @@ dependencies = [
  "screencapturekit",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "windows-capture",
  "x11rb 0.14.0",
 ]
