@@ -5,6 +5,11 @@
 //! plan (M6+) is native hardware encoders per OS — Media Foundation /
 //! NVENC (Windows), VideoToolbox (macOS), VAAPI / NVENC (Linux) — with
 //! pure-Rust container writing via `osr-mux`.
+//!
+//! Reference for the M6 migration: the Media Foundation encoder inside
+//! [`windows-capture`](https://github.com/NiiightmareXD/windows-capture) 2.x.
+
+pub mod ffmpeg;
 
 /// Compression formats the pipeline can produce.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +52,8 @@ pub enum EncodeError {
     Input(String),
     #[error("encoder process failed: {0}")]
     Process(String),
+    #[error("i/o error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
