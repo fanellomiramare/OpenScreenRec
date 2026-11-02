@@ -26,11 +26,11 @@ struct SckAudioHandler {
 }
 
 impl SCStreamOutputTrait for SckAudioHandler {
-    fn did_output_sample_buffer(&mut self, sample: CMSampleBuffer, of_type: SCStreamOutputType) {
+    fn did_output_sample_buffer(&self, sample: CMSampleBuffer, of_type: SCStreamOutputType) {
         if of_type != SCStreamOutputType::Audio {
             return;
         }
-        use screencapturekit::cm::sample_buffer::CMSampleBufferDataBufferExt;
+        use screencapturekit::cm::CMSampleBufferDataBufferExt;
         let Some(block) = sample.data_buffer_local() else {
             return;
         };

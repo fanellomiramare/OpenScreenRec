@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
 use std::time::Duration;
 
+use screencapturekit::cm::SCFrameStatus;
 use screencapturekit::prelude::*;
 use screencapturekit::stream::configuration::PixelFormat;
 
@@ -40,7 +41,7 @@ struct SckHandler {
 }
 
 impl SCStreamOutputTrait for SckHandler {
-    fn did_output_sample_buffer(&mut self, sample: CMSampleBuffer, of_type: SCStreamOutputType) {
+    fn did_output_sample_buffer(&self, sample: CMSampleBuffer, of_type: SCStreamOutputType) {
         if of_type != SCStreamOutputType::Screen {
             return;
         }
@@ -159,16 +160,17 @@ impl SckSource {
                 displays.len()
             ))
         })?;
-        // `point_pixel_scale` is 1 on standard displays, 2 on Retina:
-        // configuration and crop coordinates are in physical pixels.
+        // Physical pixels (Retina-safe): the filter's point dimensions
+        // are scaled by the display's pixel scale, queried through
+        // CoreGraphics — available on every macOS version, unlike the
+        // crate's macos_14-gated `point_pixel_scale`.
         let filter = SCContentFilter::create()
             .with_display(&display)
             .with_excluding_windows(&[])
             .build()
             .map_err(|e| CaptureError::Start(format!("content filter failed: {e}")))?;
-        let scale = filter.point_pixel_scale();
-        let display_width = (display.width() as f32 * scale).round() as u32;
-        let display_height = (display.height() as f32 * scale).round() as u32;
+        let display_width = physical_pixels_wide(display.display_id());
+        let display_height = physical_pixels_high(display.display_id());
 
         let (width, height, crop) = match crop {
             None => (display_width, display_height, None),
@@ -264,17 +266,32 @@ impl Drop for SckSource {
     }
 }
 
-/// Screen-recording permission (TCC), via CoreGraphics. Preflight
-/// returns without prompting; request triggers the system prompt (and
-/// opens the Privacy pane on recent macOS versions).
+/// Screen-recording permission (TCC) and display geometry, via
+/// CoreGraphics. Preflight returns without prompting; request triggers
+/// the system prompt (and opens the Privacy pane on recent versions).
 #[link(name = "CoreGraphics", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
     fn CGRequestScreenCaptureAccess() -> bool;
+    fn CGDisplayPixelsWide(display_id: u32) -> usize;
+    fn CGDisplayPixelsHigh(display_id: u32) -> usize;
+}
+
+/// Physical pixel width of a display (1x on standard, 2x on Retina).
+fn physical_pixels_wide(display_id: u32) -> u32 {
+    // SAFETY: plain getters over a valid display id.
+    unsafe { CGDisplayPixelsWide(display_id).max(1) as u32 }
+}
+
+/// Physical pixel height of a display.
+fn physical_pixels_high(display_id: u32) -> u32 {
+    // SAFETY: plain getters over a valid display id.
+    unsafe { CGDisplayPixelsHigh(display_id).max(1) as u32 }
 }
 
 /// Is Screen Recording already granted? Never prompts.
 pub fn screen_recording_granted() -> bool {
+    // SAFETY: plain CoreGraphics query, no side effects.
     unsafe { CGPreflightScreenCaptureAccess() }
 }
 
@@ -282,5 +299,6 @@ pub fn screen_recording_granted() -> bool {
 /// Privacy pane). Returns the granted state right after the call;
 /// the user may still be mid-approval, so poll [`screen_recording_granted`].
 pub fn request_screen_recording() -> bool {
+    // SAFETY: triggers the standard TCC prompt.
     unsafe { CGRequestScreenCaptureAccess() }
 }
