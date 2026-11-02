@@ -38,7 +38,7 @@ impl PulseMonitorSource {
     pub fn new() -> Result<Self, AudioError> {
         let spec = Spec {
             format: Format::F32le,
-            channels: CHANNELS,
+            channels: CHANNELS as u8,
             rate: SAMPLE_RATE,
         };
         if !spec.is_valid() {
@@ -75,7 +75,7 @@ impl PulseMonitorSource {
 fn capture_loop(stop: &AtomicBool, tx: SyncSender<AudioChunk>) -> Result<(), String> {
     let spec = Spec {
         format: Format::F32le,
-        channels: CHANNELS,
+        channels: CHANNELS as u8,
         rate: SAMPLE_RATE,
     };
     let simple = Simple::new(
@@ -89,16 +89,16 @@ fn capture_loop(stop: &AtomicBool, tx: SyncSender<AudioChunk>) -> Result<(), Str
         None,                  // buffer attributes
     )
     .map_err(|e| {
-        AudioError::Device(format!(
+        format!(
             "PulseAudio monitor unavailable ({e}) — is PulseAudio/PipeWire's pulse replacement running?"
-        ))
+        )
     })?;
 
     let mut buffer = vec![0u8; READ_BYTES];
     while !stop.load(Ordering::Relaxed) {
         simple
             .read(&mut buffer)
-            .map_err(|e| AudioError::Stream(format!("monitor read failed: {e}")))?;
+            .map_err(|e| format!("monitor read failed: {e}"))?;
         let mut samples = Vec::with_capacity(buffer.len() / 4);
         for chunk in buffer.as_chunks::<4>().0 {
             samples.push(f32::from_le_bytes(*chunk));
