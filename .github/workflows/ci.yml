@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libpulse-dev xvfb x11-apps
+          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libpulse-dev xvfb x11-xserver-utils
           # Functional X11 capture test: a real (virtual) X server with a
           # non-black root window, exercised by the x11 backend test.
           Xvfb :99 -screen 0 640x480x24 &
