@@ -18,8 +18,9 @@ use std::time::Duration;
 use osr_audio::{
     AudioSource, WavAudioWriter, create_microphone_source, create_system_audio_source,
 };
-use osr_capture::FrameSource;
+use osr_capture::{CaptureTarget, FrameSource};
 use osr_common::frame::VideoFrame;
+use osr_common::monotonic_us;
 use osr_encode::ffmpeg::{FfmpegPipeEncoder, VideoEncoder, mux_video_with_wav};
 use osr_encode::{VideoCodec, VideoSettings};
 
@@ -45,12 +46,16 @@ impl AudioSelection {
 /// What the user asked to record.
 #[derive(Debug, Clone)]
 pub struct RecordRequest {
-    /// 0 = primary monitor.
-    pub monitor_id: usize,
+    /// What to capture (monitor or region).
+    pub target: CaptureTarget,
     pub fps: u32,
     pub codec: VideoCodec,
     pub output: PathBuf,
     pub audio: AudioSelection,
+    /// Seconds of countdown before the first frame lands; 0 = none.
+    /// During the countdown frames are captured but discarded, so the
+    /// output still starts at exactly zero.
+    pub countdown_secs: u32,
 }
 
 /// A live recording. Drop it after `request_stop` + draining
@@ -59,20 +64,26 @@ pub struct Session {
     stop: Arc<AtomicBool>,
     pause: Arc<AtomicBool>,
     recorded_us: Arc<AtomicU64>,
+    countdown_deadline_us: Arc<AtomicU64>,
     rx: Receiver<Result<PathBuf, String>>,
     thread: Option<JoinHandle<()>>,
-    output: PathBuf,
 }
 
 impl Session {
-    /// Output file path decided at start time.
-    pub fn output(&self) -> &Path {
-        &self.output
-    }
-
-    /// Recording time excluding pauses — what the output file will span.
+    /// Recording time excluding pauses and countdown — what the output
+    /// file will span.
     pub fn recorded_elapsed(&self) -> Duration {
         Duration::from_micros(self.recorded_us.load(Ordering::Relaxed))
+    }
+
+    /// Time left in the pre-recording countdown, if one is running.
+    pub fn countdown_remaining(&self) -> Option<Duration> {
+        let deadline = self.countdown_deadline_us.load(Ordering::Relaxed);
+        if deadline == 0 {
+            return None;
+        }
+        let now = monotonic_us();
+        (deadline > now).then(|| Duration::from_micros(deadline - now))
     }
 
     /// Ask the recorder thread to finish; it writes the file and reports.
@@ -118,7 +129,7 @@ impl Session {
 /// deliver a new one in time — the output keeps a constant FPS and the
 /// duration matches recorded wall-clock time.
 pub fn start(request: RecordRequest) -> Result<Session, String> {
-    let mut source = osr_capture::backend::create_monitor_source(request.monitor_id, request.fps)
+    let mut source = osr_capture::backend::create_capture_source(&request.target, request.fps)
         .map_err(|e| format!("capture unavailable: {e}"))?;
     let (width, height) = source
         .size()
@@ -189,13 +200,18 @@ pub fn start(request: RecordRequest) -> Result<Session, String> {
     let stop = Arc::new(AtomicBool::new(false));
     let pause = Arc::new(AtomicBool::new(false));
     let recorded_us = Arc::new(AtomicU64::new(0));
+    let countdown_deadline_us = Arc::new(AtomicU64::new(if request.countdown_secs == 0 {
+        0
+    } else {
+        monotonic_us() + u64::from(request.countdown_secs) * 1_000_000
+    }));
     let output = request.output.clone();
     let frame_interval = Duration::from_secs_f64(1.0 / f64::from(request.fps.max(1)));
 
     let thread_stop = Arc::clone(&stop);
     let thread_pause = Arc::clone(&pause);
     let thread_recorded = Arc::clone(&recorded_us);
-    let thread_output = output.clone();
+    let thread_countdown = Arc::clone(&countdown_deadline_us);
     let thread = std::thread::Builder::new()
         .name("openscreenrec-recorder".into())
         .spawn(move || {
@@ -203,6 +219,7 @@ pub fn start(request: RecordRequest) -> Result<Session, String> {
                 stop: &thread_stop,
                 pause: &thread_pause,
                 recorded_us: &thread_recorded,
+                countdown_deadline_us: &thread_countdown,
                 interval: frame_interval,
                 last_frame: None,
                 last_tick: std::time::Instant::now(),
@@ -216,7 +233,7 @@ pub fn start(request: RecordRequest) -> Result<Session, String> {
                 mic_wav,
                 system_wav,
                 &mut state,
-                &thread_output,
+                &output,
             );
             let _ = tx.send(result);
         })
@@ -226,9 +243,9 @@ pub fn start(request: RecordRequest) -> Result<Session, String> {
         stop,
         pause,
         recorded_us,
+        countdown_deadline_us,
         rx,
         thread: Some(thread),
-        output,
     })
 }
 
@@ -245,6 +262,7 @@ struct Loop<'a> {
     stop: &'a AtomicBool,
     pause: &'a AtomicBool,
     recorded_us: &'a AtomicU64,
+    countdown_deadline_us: &'a AtomicU64,
     interval: Duration,
     last_frame: Option<VideoFrame>,
     last_tick: std::time::Instant,
@@ -253,6 +271,11 @@ struct Loop<'a> {
 impl Loop<'_> {
     fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
+    }
+
+    fn countdown_active(&self) -> bool {
+        let deadline = self.countdown_deadline_us.load(Ordering::Relaxed);
+        deadline != 0 && monotonic_us() < deadline
     }
 
     fn tick(&mut self) {
@@ -283,9 +306,10 @@ fn record_loop(
             break Ok(());
         }
 
-        if state.pause.load(Ordering::Relaxed) {
-            // Freeze both timelines: drain and discard whatever arrives,
-            // so resume continues from fresh data and in sync.
+        if state.pause.load(Ordering::Relaxed) || state.countdown_active() {
+            // Countdown or pause: freeze both timelines. Frames and audio
+            // arriving now are drained and discarded, so recording starts
+            // (or resumes) from fresh data with the output still at zero.
             let _ = source.next_frame(Duration::from_millis(20));
             if let Some(mic) = microphone.as_mut() {
                 while matches!(mic.next_chunk(Duration::ZERO), Ok(Some(_))) {}

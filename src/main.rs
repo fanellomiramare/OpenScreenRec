@@ -1,31 +1,35 @@
 //! OpenScreenRec — a free and open-source screen recorder, 100% Rust.
 //!
-//! M2 build: primary-monitor video capture (Windows) with microphone
-//! and/or system audio, pause/resume, MP4 via the FFmpeg pipe encoder.
+//! M3 build: frameless always-on-top toolbar, tray icon with menu,
+//! global hotkeys (F9 record/stop, F10 pause), region picker overlay,
+//! countdown, persistent settings — the recording MVP.
 
+mod app;
+mod controller;
 mod recorder;
 
 use std::time::Duration;
 
 use eframe::egui;
+use osr_capture::CaptureTarget;
+use osr_common::APP_NAME;
 use osr_encode::VideoCodec;
-
 use recorder::{AudioSelection, RecordRequest};
 
-/// Frames per second used until the settings UI lands (M3).
-const DEFAULT_FPS: u32 = 30;
+/// Frames per second used by the smoke-test path.
+const SMOKE_FPS: u32 = 30;
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
     tracing::info!(
         "starting {} v{} ({})",
-        osr_common::APP_NAME,
+        APP_NAME,
         env!("CARGO_PKG_VERSION"),
         osr_capture::backend::backend_name()
     );
 
-    if let Some(seconds) = smoke_record_seconds() {
-        return match smoke_record(seconds) {
+    if let Some(smoke) = parse_smoke() {
+        return match run_smoke(smoke) {
             Ok(()) => Ok(()),
             Err(message) => {
                 eprintln!("smoke-record failed: {message}");
@@ -34,46 +38,134 @@ fn main() -> eframe::Result<()> {
         };
     }
 
+    let settings = osr_common::settings::Settings::load();
+    let controller = controller::Controller::new();
+    controller.lock().set_request(app::build_request(
+        &settings,
+        CaptureTarget::Monitor { id: 0 },
+    ));
+
+    // Tray and hotkeys are created on the main thread, as both crates
+    // require on some platforms.
+    let tray = match app::create_tray() {
+        Ok(tray) => tray,
+        Err(message) => {
+            eprintln!("tray icon init failed: {message}");
+            std::process::exit(1);
+        }
+    };
+    let hotkeys = match app::create_hotkeys() {
+        Ok(hotkeys) => hotkeys,
+        Err(message) => {
+            eprintln!("global hotkey init failed: {message}");
+            std::process::exit(1);
+        }
+    };
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([460.0, 320.0])
-            .with_min_inner_size([380.0, 260.0]),
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_always_on_top()
+            .with_inner_size(egui::vec2(app::TOOLBAR_SIZE[0], app::TOOLBAR_SIZE[1])),
         ..Default::default()
     };
 
     eframe::run_native(
-        osr_common::APP_NAME,
+        APP_NAME,
         options,
-        Box::new(|_cc| Ok(Box::new(App::default()))),
+        Box::new(|cc| {
+            let app::TrayHandles { tray, ids, items } = tray;
+            let app::HotkeyHandles {
+                manager,
+                record,
+                pause,
+            } = hotkeys;
+            app::spawn_command_thread(controller.clone(), cc.egui_ctx.clone(), ids, record, pause);
+            Ok(Box::new(app::App::new(
+                controller,
+                settings,
+                tray,
+                items,
+                app::HotkeyHandles {
+                    manager,
+                    record,
+                    pause,
+                },
+            )))
+        }),
     )
 }
 
-/// `--smoke-record [seconds]`: record the primary monitor (with system
-/// audio) headlessly and exit. Used as an end-to-end pipeline check.
-fn smoke_record_seconds() -> Option<u64> {
+// ---------------------------------------------------------------------------
+// Smoke test: `openscreenrec --smoke-record [seconds] [x y w h]`
+// ---------------------------------------------------------------------------
+
+struct Smoke {
+    secs: u64,
+    region: Option<(i32, i32, u32, u32)>,
+}
+
+fn parse_smoke() -> Option<Smoke> {
     let args: Vec<String> = std::env::args().collect();
     let position = args.iter().position(|arg| arg == "--smoke-record")?;
-    Some(
-        args.get(position + 1)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(3),
-    )
+    let secs = args
+        .get(position + 1)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(3);
+    let region = match (
+        args.get(position + 2),
+        args.get(position + 3),
+        args.get(position + 4),
+        args.get(position + 5),
+    ) {
+        (Some(x), Some(y), Some(w), Some(h)) => {
+            match (
+                x.parse::<i32>(),
+                y.parse::<i32>(),
+                w.parse::<u32>(),
+                h.parse::<u32>(),
+            ) {
+                (Ok(x), Ok(y), Ok(w), Ok(h)) => Some((x, y, w, h)),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    Some(Smoke { secs, region })
 }
 
-fn smoke_record(seconds: u64) -> Result<(), String> {
+fn run_smoke(smoke: Smoke) -> Result<(), String> {
+    let target = match smoke.region {
+        Some((x, y, width, height)) => CaptureTarget::Region {
+            x,
+            y,
+            width,
+            height,
+        },
+        None => CaptureTarget::Monitor { id: 0 },
+    };
     let output = osr_common::default_recordings_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join(osr_common::timestamped_recording_name(".mp4"));
     let request = RecordRequest {
-        monitor_id: 0,
-        fps: DEFAULT_FPS,
+        target,
+        fps: SMOKE_FPS,
         codec: VideoCodec::H264,
         output,
         audio: AudioSelection::System,
+        countdown_secs: 0,
     };
     let session = recorder::start(request)?;
-    println!("Recording the primary monitor (with system audio) for {seconds}s...");
-    std::thread::sleep(Duration::from_secs(seconds));
+    println!(
+        "Recording {} for {}s...",
+        match smoke.region {
+            Some((x, y, w, h)) => format!("region {x},{y} {w}x{h}"),
+            None => "the primary monitor".into(),
+        },
+        smoke.secs
+    );
+    std::thread::sleep(Duration::from_secs(smoke.secs));
     let path = session.join()?;
     let size = std::fs::metadata(&path)
         .map_err(|e| format!("output file missing: {e}"))?
@@ -83,143 +175,4 @@ fn smoke_record(seconds: u64) -> Result<(), String> {
         return Err("output file is suspiciously small".into());
     }
     Ok(())
-}
-
-#[derive(Default)]
-struct App {
-    session: Option<recorder::Session>,
-    status: Option<String>,
-    microphone: bool,
-    system_audio: bool,
-}
-
-impl App {
-    fn audio_selection(&self) -> AudioSelection {
-        match (self.microphone, self.system_audio) {
-            (true, true) => AudioSelection::Both,
-            (true, false) => AudioSelection::Microphone,
-            (false, true) => AudioSelection::System,
-            (false, false) => AudioSelection::None,
-        }
-    }
-
-    fn default_output_path() -> String {
-        let dir = osr_common::default_recordings_dir().unwrap_or_else(std::env::temp_dir);
-        dir.join(osr_common::timestamped_recording_name(".mp4"))
-            .display()
-            .to_string()
-    }
-
-    fn start_recording(&mut self) {
-        let request = RecordRequest {
-            monitor_id: 0,
-            fps: DEFAULT_FPS,
-            codec: VideoCodec::H264,
-            output: Self::default_output_path().into(),
-            audio: self.audio_selection(),
-        };
-        match recorder::start(request) {
-            Ok(session) => {
-                self.status = None;
-                self.session = Some(session);
-            }
-            Err(message) => self.status = Some(format!("Failed to start: {message}")),
-        }
-    }
-
-    fn poll_session(&mut self) {
-        let mut finished = None;
-        if let Some(session) = &mut self.session
-            && let Some(result) = session.try_result()
-        {
-            finished = Some(result);
-        }
-        if let Some(result) = finished {
-            self.session = None;
-            self.status = Some(match result {
-                Ok(path) => format!("Saved {}", path.display()),
-                Err(message) => format!("Recording failed: {message}"),
-            });
-        }
-    }
-}
-
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll_session();
-        ui.vertical_centered(|ui| {
-            ui.add_space(16.0);
-            ui.heading(osr_common::APP_NAME);
-            ui.weak(format!(
-                "v{} — 100% Rust, MIT licensed",
-                env!("CARGO_PKG_VERSION")
-            ));
-            ui.add_space(12.0);
-            ui.separator();
-            ui.add_space(12.0);
-
-            match &mut self.session {
-                Some(session) => {
-                    let state = if session.is_paused() { "⏸" } else { "●" };
-                    ui.label(format!(
-                        "{state} Recording — {:.0}s @ {} fps",
-                        session.recorded_elapsed().as_secs_f32(),
-                        DEFAULT_FPS
-                    ));
-                    ui.weak(format!("→ {}", session.output().display()));
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(if session.is_paused() {
-                                "▶ Resume"
-                            } else {
-                                "⏸ Pause"
-                            })
-                            .clicked()
-                        {
-                            if session.is_paused() {
-                                session.resume();
-                            } else {
-                                session.pause();
-                            }
-                        }
-                        if ui.button("⏹ Stop").clicked() {
-                            session.request_stop();
-                        }
-                    });
-                    ui.ctx().request_repaint_after(Duration::from_millis(200));
-                }
-                None => {
-                    if ui.button("● Record primary monitor").clicked() {
-                        self.start_recording();
-                    }
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.microphone, "Microphone");
-                        ui.checkbox(&mut self.system_audio, "System audio");
-                    });
-                    ui.weak(format!("{} fps → Videos folder", DEFAULT_FPS));
-                }
-            }
-
-            if let Some(message) = &self.status {
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(12.0);
-                ui.label(message);
-            }
-
-            ui.add_space(16.0);
-            ui.weak("Your recordings never leave your machine.");
-        });
-    }
-
-    fn on_exit(&mut self) {
-        // Never leave an ffmpeg process behind when the window closes.
-        if let Some(session) = self.session.take()
-            && let Ok(path) = session.join()
-        {
-            tracing::info!("finalized {} on exit", path.display());
-        }
-    }
 }

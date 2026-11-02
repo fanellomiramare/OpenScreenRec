@@ -30,14 +30,15 @@ All A/V timestamps live on one monotonic microsecond clock, which makes mixing, 
 | `osr-encode`               | video/audio compression                                             |
 | `osr-mux`                  | container writing (MP4, MKV/WebM)                                   |
 
-## Current status (M2)
+## Current status (M3 — recording MVP complete)
 
-- **Windows video**: live — Windows Graphics Capture via `windows-capture`, monitor capture at a configurable FPS.
+- **Windows video**: live — Windows Graphics Capture via `windows-capture`; full-monitor capture and region capture (the monitor is captured, each frame is cropped on the GPU via `Frame::buffer_crop`).
 - **Audio**: live — microphone via `cpal` (all platforms), system audio via WASAPI loopback (`wasapi`, Windows).
   - An idle render endpoint is suspended by Windows, so loopback capture would deliver nothing at all; the backend runs a silent keep-alive render stream on the same endpoint to keep it active.
 - **Encoding**: live — the FFmpeg pipe encoder turns BGRA frames into MP4 (H.264); audio lands in temporary WAV files and the mux step combines them (video stream-copied, audio AAC). The FFmpeg binary stays external, so no license is inherited.
-- **Pause/resume**: live — freezing both timelines at once keeps A/V aligned, and paused time leaves the output entirely.
-- **macOS / Linux**: capture backends are stubs reporting `Unsupported` until M4/M5; the encoder and pipeline are already platform-neutral.
+- **Pause/resume**: live — freezing both timelines at once keeps A/V aligned, and paused time (and countdown time) leaves the output entirely.
+- **UX**: frameless always-on-top toolbar (egui), close-to-tray with a tray menu (`tray-icon`, ksni backend on Linux), global hotkeys F9/F10 (`global-hotkey`), snapshot-based region picker (the window hides, one frame is grabbed, the user draws on it — so the toolbar never appears inside the recording), countdown, and persistent settings (`osr-common::settings`, TOML in the user config dir).
+- **macOS / Linux**: capture backends are stubs reporting `Unsupported` until M4/M5; the encoder, pipeline and UI are already platform-neutral.
 - The recorder holds a constant output FPS by duplicating the last frame when the screen doesn't repaint — durations match recorded wall-clock time on static screens.
 
 ## Per-OS plan
