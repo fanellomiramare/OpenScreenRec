@@ -165,7 +165,7 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
             &session,
             SelectSourcesOptions::default()
                 .set_cursor_mode(CursorMode::Hidden)
-                .set_sources(SourceType::Monitor)
+                .set_sources(SourceType::Monitor | SourceType::Monitor)
                 .set_multiple(false)
                 .set_restore_token(None)
                 .set_persist_mode(PersistMode::DoNot),
@@ -264,7 +264,9 @@ fn run_stream(
     .map_err(|e| e.to_string())?
     .0
     .into_inner();
-    let mut params = [Pod::from_bytes(&values).map_err(|e| e.to_string())?];
+    let pod =
+        Pod::from_bytes(&values).ok_or_else(|| "failed to serialize the format pod".to_string())?;
+    let mut params = [pod];
 
     let listener = stream
         .add_local_listener_with_user_data(&mut pump)
@@ -284,9 +286,13 @@ fn run_stream(
             let mut info = pw::spa::param::video::VideoInfoRaw::default();
             let _ = info.parse(param); // SpaSuccess carries nothing we need
             let negotiated = info.format();
-            *pump.format.lock().unwrap_or_else(|p| p.into_inner()) = Some(negotiated.as_raw());
+            *pump.format.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some(negotiated.as_raw() as i32);
             if negotiated == VideoFormat::BGRx {
-                pump.report_size((info.size().width, info.size().height));
+                pump.report_size((
+                    info.size().width.max(0) as u32,
+                    info.size().height.max(0) as u32,
+                ));
             } else {
                 pump.warn_once(&format!(
                     "compositor negotiated {negotiated:?} instead of BGRx; frames will be dropped"
@@ -295,7 +301,7 @@ fn run_stream(
         })
         .process(|stream, pump| {
             let format = *pump.format.lock().unwrap_or_else(|p| p.into_inner());
-            if format != Some(VideoFormat::BGRx.as_raw()) {
+            if format != Some(VideoFormat::BGRx.as_raw() as i32) {
                 return; // already warned once in param_changed
             }
             let Some(mut buffer) = stream.dequeue_buffer() else {
@@ -353,7 +359,7 @@ fn run_stream(
     let deadline = Instant::now() + FORMAT_TIMEOUT;
     while size.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
         if stop.load(Ordering::Relaxed) || Instant::now() > deadline {
-            timer.update_timer(None, None).ok();
+            let _ = timer.update_timer(None, None);
             mainloop.quit();
             return Err("the compositor did not negotiate a video format in time".into());
         }

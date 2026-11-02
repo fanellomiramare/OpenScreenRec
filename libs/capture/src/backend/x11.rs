@@ -34,11 +34,16 @@ impl X11Source {
     /// per-monitor split arrives with multi-monitor work (M6).
     pub fn new(monitor_index: usize, _fps: u32) -> Result<Self, CaptureError> {
         let (conn, screen_index) = connect()?;
-        let screen = screen_at(&conn, screen_index)?;
-        let size = (
-            u32::from(screen.width_in_pixels),
-            u32::from(screen.height_in_pixels),
-        );
+        let (root, size) = {
+            let screen = screen_at(&conn, screen_index)?;
+            (
+                screen.root,
+                (
+                    u32::from(screen.width_in_pixels),
+                    u32::from(screen.height_in_pixels),
+                ),
+            )
+        };
         if monitor_index != 0 {
             tracing::warn!(
                 "monitor {monitor_index} requested: X11 captures the whole desktop for now"
@@ -46,7 +51,7 @@ impl X11Source {
         }
         Ok(Self {
             conn,
-            root: screen.root,
+            root,
             rect: (0, 0, size.0, size.1),
             size,
         })
@@ -62,9 +67,14 @@ impl X11Source {
         _fps: u32,
     ) -> Result<Self, CaptureError> {
         let (conn, screen_index) = connect()?;
-        let screen = screen_at(&conn, screen_index)?;
-        let screen_w = u32::from(screen.width_in_pixels);
-        let screen_h = u32::from(screen.height_in_pixels);
+        let (root, screen_w, screen_h) = {
+            let screen = screen_at(&conn, screen_index)?;
+            (
+                screen.root,
+                u32::from(screen.width_in_pixels),
+                u32::from(screen.height_in_pixels),
+            )
+        };
         // Clamp into the screen, keeping at least 2x2 pixels.
         let x = x.clamp(0, screen_w as i32 - 2);
         let y = y.clamp(0, screen_h as i32 - 2);
@@ -72,7 +82,7 @@ impl X11Source {
         let height = height.clamp(2, screen_h.saturating_sub(y as u32));
         Ok(Self {
             conn,
-            root: screen.root,
+            root,
             rect: (x, y, width, height),
             size: (width, height),
         })
@@ -80,9 +90,14 @@ impl X11Source {
 
     fn grab(&mut self) -> Result<VideoFrame, CaptureError> {
         let (x, y, width, height) = self.rect;
+        let (x, y) = (i16::try_from(x).unwrap_or(0), i16::try_from(y).unwrap_or(0));
+        let (width, height) = (
+            u16::try_from(width).unwrap_or(u16::MAX),
+            u16::try_from(height).unwrap_or(u16::MAX),
+        );
         let reply = self
             .conn
-            .get_image_immediate(ImageFormat::Z_PIXMAP, self.root, x, y, width, height, !0)
+            .get_image(ImageFormat::Z_PIXMAP, self.root, x, y, width, height, !0)
             .map_err(|e| CaptureError::Stream(format!("XGetImage failed: {e}")))?
             .reply()
             .map_err(|e| CaptureError::Stream(format!("XGetImage failed: {e}")))?;
@@ -92,6 +107,8 @@ impl X11Source {
         for pixel in data.as_chunks_mut::<4>().0 {
             pixel[3] = 255;
         }
+        let width = u32::from(width);
+        let height = u32::from(height);
         Ok(VideoFrame {
             pts_us: monotonic_us(),
             width,
