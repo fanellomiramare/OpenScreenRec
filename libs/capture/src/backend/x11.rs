@@ -128,7 +128,7 @@ fn connect() -> Result<(RustConnection, usize), CaptureError> {
     })
 }
 
-fn screen_at<'a>(conn: &'a RustConnection, index: usize) -> Result<&'a Screen, CaptureError> {
+fn screen_at(conn: &RustConnection, index: usize) -> Result<&Screen, CaptureError> {
     conn.setup()
         .roots
         .get(index)
