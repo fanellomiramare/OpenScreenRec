@@ -190,8 +190,7 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
 
 /// Everything after the portal: PipeWire stream setup, format
 /// negotiation and the frame pump. Runs on the capture thread; blocks
-/// in the main loop until the stop flag fires (a repeating timer quits
-/// the loop from inside).
+/// in the main loop until the stop flag flips.
 fn run_stream(
     stop: &Arc<AtomicBool>,
     tx: SyncSender<VideoFrame>,
@@ -342,11 +341,11 @@ fn run_stream(
     let deadline = Instant::now() + FORMAT_TIMEOUT;
     while size.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
         if stop.load(Ordering::Relaxed) || Instant::now() > deadline {
-            let _ = timer.update_timer(None, None);
-            mainloop.quit();
             return Err("the compositor did not negotiate a video format in time".into());
         }
-        std::thread::sleep(Duration::from_millis(50));
+        mainloop
+            .loop_()
+            .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(50)));
     }
     let size = size
         .lock()
