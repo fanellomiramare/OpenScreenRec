@@ -5,19 +5,23 @@
 //!
 //! | OS      | API                                                        | Backend status |
 //! | ------- | ---------------------------------------------------------- | -------------- |
-//! | Windows | Windows Graphics Capture (via `windows-capture`)           | planned for M1 |
+//! | Windows | Windows Graphics Capture (via `windows-capture`)           | ✅ M1          |
 //! | macOS   | ScreenCaptureKit (via `screencapturekit`)                  | planned for M4 |
 //! | Linux   | XSHM (X11) / desktop portal + PipeWire (Wayland)           | planned for M5 |
 //!
-//! Backends land milestone by milestone; until then backend queries
-//! report [`CaptureError::Unsupported`].
+//! Design notes:
+//!
+//! - Backends deliver frames as fast as the OS composites them (typically
+//!   vsync- or change-driven); rate limiting to the configured FPS happens
+//!   upstream in the pipeline, not inside the backend.
+//! - Frame types live in [`osr_common::frame`] so the rest of the
+//!   pipeline never depends on this crate.
 
 pub mod backend;
-pub mod frame;
 
 use std::time::Duration;
 
-pub use frame::{FrameFormat, VideoFrame};
+pub use osr_common::frame::{FrameFormat, VideoFrame};
 
 /// What to capture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,9 +61,11 @@ pub enum CaptureError {
 
 /// A source of video frames: one running capture session.
 ///
-/// Backends deliver frames as fast as the OS composites them (typically
-/// vsync-locked); rate limiting to the configured FPS happens upstream
-/// in the pipeline, not inside the backend.
+/// The intended usage is `create_*_source()` → [`Self::start`] →
+/// [`Self::next_frame`] loop → [`Self::stop`]. Sources may already be
+/// live when constructed (the WGC backend starts its session in the
+/// constructor); [`Self::start`] stays on the trait so every backend
+/// can be driven through the same sequence.
 pub trait FrameSource: Send {
     /// Begin delivering frames. Must be called before [`Self::next_frame`].
     fn start(&mut self) -> Result<(), CaptureError>;
@@ -68,15 +74,23 @@ pub trait FrameSource: Send {
     fn stop(&mut self);
 
     /// Block up to `timeout` for the next frame. `Ok(None)` means no
-    /// frame arrived in time; the caller decides whether to keep waiting.
+    /// frame arrived in time; the caller decides whether to keep waiting
+    /// or duplicate the previous one to hold a steady cadence.
     fn next_frame(&mut self, timeout: Duration) -> Result<Option<VideoFrame>, CaptureError>;
+
+    /// Native pixel size of the capture target, when known before the
+    /// first frame arrives. The pipeline uses it to configure the encoder.
+    fn size(&self) -> Option<(u32, u32)> {
+        None
+    }
 }
 
 /// Enumerate the capture targets visible to the current backend
-/// (monitors and windows). Backends fill this in as they land (M1+).
+/// (monitors and windows). Monitors-only enumeration lands with the
+/// region picker (M3).
 pub fn list_targets() -> Result<Vec<CaptureTarget>, CaptureError> {
     Err(CaptureError::Unsupported(
-        "target enumeration arrives with the first platform backend".into(),
+        "target enumeration is not implemented yet".into(),
     ))
 }
 
@@ -85,7 +99,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_targets_is_an_honest_stub_until_m1() {
+    fn list_targets_is_an_honest_stub() {
         assert!(matches!(list_targets(), Err(CaptureError::Unsupported(_))));
     }
 }

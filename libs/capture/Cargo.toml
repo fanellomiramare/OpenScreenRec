@@ -10,3 +10,6 @@ publish.workspace = true
 [dependencies]
 osr-common = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-capture = "2"
