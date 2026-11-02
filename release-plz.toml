@@ -5,7 +5,7 @@
 changelog_update = true
 changelog_path = "CHANGELOG.md"
 # One tag per release for the whole workspace, matched by .github/workflows/release.yml
-tag_name = "v{{ version }}"
+git_tag_name = "v{{ version }}"
 git_release_enable = true
 git_release_draft = false
 pr_branch_prefix = "release-plz-"
