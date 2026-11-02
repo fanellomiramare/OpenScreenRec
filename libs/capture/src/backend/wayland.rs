@@ -165,7 +165,7 @@ async fn open_portal() -> Result<(u32, OwnedFd), String> {
             &session,
             SelectSourcesOptions::default()
                 .set_cursor_mode(CursorMode::Hidden)
-                .set_sources(SourceType::Monitor | SourceType::Monitor)
+                .set_sources(ashpd::enumflags2::BitFlags::from_flag(SourceType::Monitor))
                 .set_multiple(false)
                 .set_restore_token(None)
                 .set_persist_mode(PersistMode::DoNot),
