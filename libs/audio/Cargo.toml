@@ -1,0 +1,11 @@
+[package]
+name = "osr-audio"
+description = "Audio capture for OpenScreenRec: microphone + system loopback, mixing, A/V sync."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+osr-common = { workspace = true }

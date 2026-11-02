@@ -1,0 +1,12 @@
+[package]
+name = "osr-encode"
+description = "Video/audio encoding for OpenScreenRec: FFmpeg pipe now, native hardware encoders later."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+osr-common = { workspace = true }
+thiserror = { workspace = true }

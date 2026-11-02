@@ -1,0 +1,18 @@
+# release-plz configuration — automated version bumps, changelog and tags.
+# See CONTRIBUTING.md for the release process.
+
+[workspace]
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+# One tag per release for the whole workspace, matched by .github/workflows/release.yml
+tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_draft = false
+pr_branch_prefix = "release-plz-"
+
+[changelog]
+header = """# Changelog
+
+All notable changes to this project are documented in this file.
+Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org) (0.x while pre-1.0). Automated by [release-plz](https://github.com/MarcoIeni/release-plz).
+"""

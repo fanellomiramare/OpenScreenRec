@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "libs/audio",
+    "libs/capture",
+    "libs/common",
+    "libs/encode",
+    "libs/mux",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/fanellomiramare/OpenScreenRec"
+publish = false
+
+[workspace.dependencies]
+osr-common = { path = "libs/common" }
+osr-capture = { path = "libs/capture" }
+osr-audio = { path = "libs/audio" }
+osr-encode = { path = "libs/encode" }
+osr-mux = { path = "libs/mux" }
+thiserror = "2"
+
+[package]
+name = "openscreenrec"
+description = "Free and open-source screen recorder — 100% Rust, cross-platform."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+eframe = "0.37"
+osr-common = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[[bin]]
+name = "openscreenrec"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

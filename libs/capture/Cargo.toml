@@ -1,0 +1,12 @@
+[package]
+name = "osr-capture"
+description = "Screen and window capture for OpenScreenRec: FrameSource trait + per-OS backends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+osr-common = { workspace = true }
+thiserror = { workspace = true }

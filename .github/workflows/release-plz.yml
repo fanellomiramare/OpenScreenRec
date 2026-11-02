@@ -1,0 +1,54 @@
+name: Release-plz
+
+# Automated versioning: release-plz opens a Release PR that bumps the
+# workspace version and regenerates CHANGELOG.md; merging it makes the
+# `release` job create the vX.Y.Z tag and GitHub Release, which then
+# triggers .github/workflows/release.yml to build artifacts.
+# See CONTRIBUTING.md.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release-plz-release:
+    name: Tag & GitHub Release
+    runs-on: ubuntu-latest
+    if: github.repository == 'fanellomiramare/OpenScreenRec'
+    permissions:
+      contents: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_PAT || secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_PAT || secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    name: Version-bump PR
+    runs-on: ubuntu-latest
+    if: github.repository == 'fanellomiramare/OpenScreenRec'
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_PAT || secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_PAT || secrets.GITHUB_TOKEN }}

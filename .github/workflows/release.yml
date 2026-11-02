@@ -1,0 +1,70 @@
+name: Release
+
+# Triggered when release-plz publishes a GitHub Release (see release-plz.yml).
+# Builds release binaries for every platform and attaches them to the release.
+# Native installers (.exe installer, .dmg, AppImage, deb/rpm) land with M5 —
+# until then these archives are the official artifacts.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  artifacts:
+    name: ${{ matrix.artifact-name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact-name: openscreenrec-windows-x64
+            binary: openscreenrec.exe
+            archive: zip
+          - os: macos-latest
+            artifact-name: openscreenrec-macos-arm64
+            binary: openscreenrec
+            archive: tar.gz
+          - os: macos-13
+            artifact-name: openscreenrec-macos-x64
+            binary: openscreenrec
+            archive: tar.gz
+          - os: ubuntu-latest
+            artifact-name: openscreenrec-linux-x64
+            binary: openscreenrec
+            archive: tar.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "dist/${{ matrix.artifact-name }}"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/release/${{ matrix.binary }}" $dir/
+          Copy-Item README.md, LICENSE $dir/
+          Compress-Archive -Path $dir -DestinationPath "${{ matrix.artifact-name }}.zip"
+
+      - name: Package (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist/${{ matrix.artifact-name }}
+          cp target/release/${{ matrix.binary }} dist/${{ matrix.artifact-name }}/
+          cp README.md LICENSE dist/${{ matrix.artifact-name }}/
+          tar -czf ${{ matrix.artifact-name }}.tar.gz -C dist ${{ matrix.artifact-name }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact-name }}.zip
+            ${{ matrix.artifact-name }}.tar.gz

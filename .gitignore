@@ -1,0 +1,15 @@
+# Build artifacts
+/target
+
+# Logs
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+.vscode/
+*.swp
