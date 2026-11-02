@@ -31,7 +31,9 @@ pub enum CaptureTarget {
         /// Index into the virtual desktop, in backend enumeration order.
         id: usize,
     },
-    /// A rectangle in global (virtual desktop) coordinates, physical pixels.
+    /// A rectangle in primary-monitor-local physical pixels (the region
+    /// picker overlay covers the primary monitor). Virtual-desktop
+    /// mapping across monitors lands with multi-monitor support (M6).
     Region {
         x: i32,
         y: i32,
@@ -87,11 +89,21 @@ pub trait FrameSource: Send {
 
 /// Enumerate the capture targets visible to the current backend
 /// (monitors and windows). Monitors-only enumeration lands with the
-/// region picker (M3).
+/// multi-monitor picker (M6).
 pub fn list_targets() -> Result<Vec<CaptureTarget>, CaptureError> {
     Err(CaptureError::Unsupported(
         "target enumeration is not implemented yet".into(),
     ))
+}
+
+/// Grab a single frame of a monitor, e.g. the snapshot the region
+/// picker shows while the user draws the selection rectangle.
+pub fn grab_monitor_frame(monitor_id: usize) -> Result<VideoFrame, CaptureError> {
+    let mut source = backend::create_monitor_source(monitor_id, 30)?;
+    source.start()?;
+    let frame = (0..40).find_map(|_| source.next_frame(Duration::from_millis(50)).ok().flatten());
+    source.stop();
+    frame.ok_or_else(|| CaptureError::Stream("no frame captured in time".into()))
 }
 
 #[cfg(test)]
