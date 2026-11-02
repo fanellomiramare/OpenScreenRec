@@ -5,7 +5,7 @@
 
 **OpenScreenRec** is a free and open-source screen recorder, written in **100% Rust** — no Electron, no web tech, no telemetry. Lightweight, local-first and cross-platform. Your recordings never leave your machine.
 
-> 🚧 OpenScreenRec is in early development. The first installers ship with milestone **M5** — until then, [build from source](#build-from-source) and follow the [roadmap](#roadmap).
+> 🚧 OpenScreenRec is in early development. The **macOS `.dmg`** is ready since M4 (first launch needs a one-time Gatekeeper approval — [read the macOS guide](docs/MACOS.md) before installing); Windows and Linux installers ship with **M5** — until then, [build from source](#build-from-source) and follow the [roadmap](#roadmap).
 
 ## Philosophy
 
@@ -25,10 +25,11 @@
 
 ### macOS
 
-| Package                       | Status              |
-| ----------------------------- | ------------------- |
-| Apple Silicon (`.dmg`)        | coming with **M5**  |
-| Intel (`.dmg`)                | coming with **M5**  |
+| Package                       | Status                                             |
+| ----------------------------- | -------------------------------------------------- |
+| Apple Silicon (`.dmg`)        | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
+| Intel (`.dmg`)                | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
+| Homebrew Cask                 | planned (**M5**) — no Gatekeeper prompt at all     |
 
 ### Linux
 
@@ -64,8 +65,8 @@ target\release\openscreenrec.exe      # Windows
 | **M1**    | Video capture (Windows first) → MP4 via FFmpeg pipe                         | ✅     |
 | **M2**    | Microphone + system audio, A/V sync, pause                                  | ✅     |
 | **M3**    | Floating toolbar, hotkeys, tray, region picker — **MVP complete**           | ✅     |
-| **M4**    | macOS backend (ScreenCaptureKit, permissions, TCC)                          | 🚧     |
-| **M5**    | Linux backend (X11 / Wayland portal) + installers for all three OS          |        |
+| **M4**    | macOS backend (ScreenCaptureKit, permissions, TCC, .dmg)                    | ✅     |
+| **M5**    | Linux backend (X11 / Wayland portal) + installers for all three OS          | 🚧     |
 | **M6**    | Hardware encoders, window capture, audio tracks, GIF/WebM, replay buffer, webcam PiP | |
 
 ## Repository layout

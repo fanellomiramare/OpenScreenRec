@@ -30,15 +30,16 @@ All A/V timestamps live on one monotonic microsecond clock, which makes mixing, 
 | `osr-encode`               | video/audio compression                                             |
 | `osr-mux`                  | container writing (MP4, MKV/WebM)                                   |
 
-## Current status (M3 — recording MVP complete)
+## Current status (M4)
 
 - **Windows video**: live — Windows Graphics Capture via `windows-capture`; full-monitor capture and region capture (the monitor is captured, each frame is cropped on the GPU via `Frame::buffer_crop`).
-- **Audio**: live — microphone via `cpal` (all platforms), system audio via WASAPI loopback (`wasapi`, Windows).
-  - An idle render endpoint is suspended by Windows, so loopback capture would deliver nothing at all; the backend runs a silent keep-alive render stream on the same endpoint to keep it active.
+- **macOS video**: live — ScreenCaptureKit via `screencapturekit` (macOS 12.3+); monitor capture and region capture (each frame cropped in software off the locked pixel buffer), with TCC preflight/request exposed to the UI.
+- **Audio**: live — microphone via `cpal` (all platforms); system audio via WASAPI loopback (`wasapi`, Windows) and ScreenCaptureKit audio (macOS).
+  - Windows: an idle render endpoint is suspended, so loopback capture would deliver nothing at all; the backend runs a silent keep-alive render stream on the same endpoint to keep it active.
 - **Encoding**: live — the FFmpeg pipe encoder turns BGRA frames into MP4 (H.264); audio lands in temporary WAV files and the mux step combines them (video stream-copied, audio AAC). The FFmpeg binary stays external, so no license is inherited.
 - **Pause/resume**: live — freezing both timelines at once keeps A/V aligned, and paused time (and countdown time) leaves the output entirely.
-- **UX**: frameless always-on-top toolbar (egui), close-to-tray with a tray menu (`tray-icon`, ksni backend on Linux), global hotkeys F9/F10 (`global-hotkey`), snapshot-based region picker (the window hides, one frame is grabbed, the user draws on it — so the toolbar never appears inside the recording), countdown, and persistent settings (`osr-common::settings`, TOML in the user config dir).
-- **macOS / Linux**: capture backends are stubs reporting `Unsupported` until M4/M5; the encoder, pipeline and UI are already platform-neutral.
+- **UX**: frameless always-on-top toolbar (egui), close-to-tray with a tray menu (`tray-icon`, ksni backend on Linux), global hotkeys F9/F10 (`global-hotkey`), snapshot-based region picker, countdown, persistent settings, and a macOS permission view (preflight → system prompt → re-check loop).
+- **macOS distribution**: `.app` bundle inside a `.dmg`, signed ad-hoc by default or with the project's stable self-signed certificate when the GitHub secrets are set — see [MACOS.md](MACOS.md). Linux capture backends are stubs until M5.
 - The recorder holds a constant output FPS by duplicating the last frame when the screen doesn't repaint — durations match recorded wall-clock time on static screens.
 
 ## Per-OS plan

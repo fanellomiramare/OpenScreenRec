@@ -37,6 +37,8 @@ enum View {
     Toolbar,
     Settings,
     RegionSelect,
+    /// macOS: screen recording permission not granted yet (TCC).
+    PermissionNeeded,
 }
 
 enum AppEvent {
@@ -238,6 +240,7 @@ pub struct App {
     controller: Controller,
     settings: Settings,
     view: View,
+    sized_view: bool,
     status: Option<String>,
     events_tx: Sender<AppEvent>,
     events_rx: Receiver<AppEvent>,
@@ -256,10 +259,16 @@ impl App {
         hotkeys: HotkeyHandles,
     ) -> Self {
         let (events_tx, events_rx) = channel();
+        let view = if osr_capture::backend::screen_recording_granted() {
+            View::Toolbar
+        } else {
+            View::PermissionNeeded
+        };
         Self {
             controller,
             settings,
-            view: View::Toolbar,
+            view,
+            sized_view: false,
             status: None,
             events_tx,
             events_rx,
@@ -272,8 +281,10 @@ impl App {
 
     fn set_view(&mut self, ctx: &Context, view: View) {
         self.view = view;
+        self.sized_view = true;
         let size = match view {
             View::Settings => SETTINGS_SIZE,
+            View::PermissionNeeded => [320.0, 200.0],
             _ => TOOLBAR_SIZE,
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(size[0], size[1])));
@@ -568,6 +579,30 @@ impl App {
             }
         }
     }
+
+    fn permission_ui(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("Screen recording permission").strong());
+        ui.add_space(2.0);
+        ui.label(
+            "macOS needs you to allow OpenScreenRec in System Settings → Privacy & Security → Screen Recording.",
+        );
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.button("Grant access…").clicked() {
+                osr_capture::backend::request_screen_recording_permission();
+            }
+            if ui.button("Check again").clicked()
+                && osr_capture::backend::screen_recording_granted()
+            {
+                self.status = Some("Screen recording permission granted.".into());
+                self.set_view(ui.ctx(), View::Toolbar);
+            }
+        });
+        ui.add_space(6.0);
+        ui.weak("If capturing still fails after granting, quit (tray → Quit) and reopen the app — macOS applies the change then.");
+        ui.weak("Microphone access is requested automatically the first time you enable it.");
+    }
 }
 
 impl eframe::App for App {
@@ -589,13 +624,33 @@ impl eframe::App for App {
         };
         self.sync_menu(recording);
 
+        // Apply the per-view window size once, after the viewport exists.
+        if !self.sized_view {
+            self.sized_view = true;
+            let size = match self.view {
+                View::Settings => SETTINGS_SIZE,
+                View::PermissionNeeded => [320.0, 200.0],
+                _ => TOOLBAR_SIZE,
+            };
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(size[0], size[1])));
+        }
+
+        // macOS TCC: poll the permission while the user is approving it.
+        if self.view == View::PermissionNeeded && osr_capture::backend::screen_recording_granted() {
+            self.status = Some("Screen recording permission granted.".into());
+            self.set_view(ui.ctx(), View::Toolbar);
+        }
+
         match self.view {
             View::Toolbar => self.toolbar_ui(ui),
             View::Settings => self.settings_ui(ui),
             View::RegionSelect => self.region_ui(ui),
+            View::PermissionNeeded => self.permission_ui(ui),
         }
 
-        if recording {
+        let keep_polling = recording || self.view == View::PermissionNeeded;
+        if keep_polling {
             ui.ctx().request_repaint_after(Duration::from_millis(200));
         }
     }

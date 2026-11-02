@@ -2,8 +2,13 @@ name: Release
 
 # Triggered when release-plz publishes a GitHub Release (see release-plz.yml).
 # Builds release binaries for every platform and attaches them to the release.
-# Native installers (.exe installer, .dmg, AppImage, deb/rpm) land with M5 —
-# until then these archives are the official artifacts.
+#
+# macOS ships a proper .app bundle inside a .dmg. Without the signing
+# secrets the bundle is ad-hoc signed (works, Gatekeeper asks for a
+# one-time approval — see docs/MACOS.md); with the optional
+# self-signed-certificate secrets the signature stays stable across
+# releases, so TCC permissions survive updates.
+# Native installers for Windows (.exe) and Linux (AppImage/deb/rpm) land with M5.
 
 on:
   release:
@@ -26,19 +31,19 @@ jobs:
           - os: windows-latest
             artifact-name: openscreenrec-windows-x64
             binary: openscreenrec.exe
-            archive: zip
+            ext: .zip
           - os: macos-latest
             artifact-name: openscreenrec-macos-arm64
             binary: openscreenrec
-            archive: tar.gz
+            ext: .dmg
           - os: macos-13
             artifact-name: openscreenrec-macos-x64
             binary: openscreenrec
-            archive: tar.gz
+            ext: .dmg
           - os: ubuntu-latest
             artifact-name: openscreenrec-linux-x64
             binary: openscreenrec
-            archive: tar.gz
+            ext: .tar.gz
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux build dependencies (ALSA for cpal)
@@ -58,8 +63,57 @@ jobs:
           Copy-Item README.md, LICENSE $dir/
           Compress-Archive -Path $dir -DestinationPath "${{ matrix.artifact-name }}.zip"
 
-      - name: Package (macOS / Linux)
-        if: runner.os != 'Windows'
+      - name: Package (macOS — .app bundle + .dmg)
+        if: runner.os == 'MacOS'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
+        run: |
+          APP="OpenScreenRec.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>OpenScreenRec</string>
+            <key>CFBundleDisplayName</key><string>OpenScreenRec</string>
+            <key>CFBundleIdentifier</key><string>com.fanellomiramare.openscreenrec</string>
+            <key>CFBundleExecutable</key><string>OpenScreenRec</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${GITHUB_REF_NAME#v}</string>
+            <key>LSMinimumSystemVersion</key><string>12.3</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSScreenCaptureUsageDescription</key><string>OpenScreenRec needs screen recording permission to capture your screen.</string>
+            <key>NSMicrophoneUsageDescription</key><string>OpenScreenRec records your microphone when you enable it.</string>
+          </dict>
+          </plist>
+          PLIST
+          cp "target/release/${{ matrix.binary }}" "$APP/Contents/MacOS/OpenScreenRec"
+
+          # Stable self-signed certificate when the secrets exist (TCC
+          # permissions survive updates); ad-hoc otherwise (docs/MACOS.md).
+          if [ -n "$MACOS_CERT_P12" ]; then
+            echo "$MACOS_CERT_P12" | base64 --decode > cert.p12
+            security create-keychain -p osr-temp build.keychain
+            security import cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k osr-temp build.keychain
+            codesign --force --sign "$MACOS_CERT_IDENTITY" "$APP"
+            security delete-keychain build.keychain
+            rm cert.p12
+          else
+            codesign --force --sign - "$APP"
+          fi
+
+          mkdir -p dist
+          cp -R "$APP" dist/
+          cp README.md LICENSE dist/
+          hdiutil create -volname OpenScreenRec -srcfolder dist -ov -format UDZO \
+            "${{ matrix.artifact-name }}.dmg"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p dist/${{ matrix.artifact-name }}
           cp target/release/${{ matrix.binary }} dist/${{ matrix.artifact-name }}/
@@ -68,6 +122,4 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ matrix.artifact-name }}.zip
-            ${{ matrix.artifact-name }}.tar.gz
+          files: ${{ matrix.artifact-name }}${{ matrix.ext }}
