@@ -15,6 +15,8 @@
 pub mod cpal_source;
 pub mod wav;
 
+#[cfg(target_os = "linux")]
+pub mod pulse_monitor;
 #[cfg(target_os = "macos")]
 pub mod sck_audio;
 #[cfg(target_os = "windows")]
@@ -118,23 +120,19 @@ pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> 
     Ok(Box::new(sck_audio::SckSystemAudioSource::new()?))
 }
 
-/// Create a capture source for everything the user hears.
-///
-/// System audio lands on Linux in M5.
-#[cfg(all(unix, not(target_os = "macos")))]
+/// Create a capture source for everything the user hears (PulseAudio
+/// monitor; under PipeWire desktops the monitor is provided by
+/// `pipewire-pulse`).
+#[cfg(target_os = "linux")]
 pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> {
-    Err(AudioError::Unsupported(
-        "system audio lands on Linux in M5".into(),
-    ))
+    Ok(Box::new(pulse_monitor::PulseMonitorSource::new()?))
 }
 
-/// Create a capture source for everything the user hears.
-///
-/// System audio lands on Linux in M5.
-#[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+/// System audio has no source on this platform yet.
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn create_system_audio_source() -> Result<Box<dyn AudioSource>, AudioError> {
     Err(AudioError::Unsupported(
-        "system audio lands on Linux in M5".into(),
+        "system audio is not supported on this platform".into(),
     ))
 }
 
