@@ -19,6 +19,8 @@ allow = [
     # Font licenses: egui's default fonts are embedded under these.
     "OFL-1.1",
     "Ubuntu-font-1.0",
+    # ksni (the Linux tray backend) is Unlicense-only.
+    "Unlicense",
 ]
 confidence-threshold = 0.93
 
