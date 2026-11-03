@@ -72,7 +72,8 @@ jobs:
           choco install nsis -y --no-progress
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          makensis "/DAPP_VERSION=$version" `
+          & "C:\Program Files (x86)\NSIS\makensis.exe" `
+            "/DAPP_VERSION=$version" `
             "/DEXE_PATH=target\release\${{ matrix.binary }}" `
             "/DLICENSE_PATH=LICENSE" "/DREADME_PATH=README.md" `
             "/DOUT_DIR=dist" packaging\windows.nsi
@@ -174,14 +175,20 @@ jobs:
       - name: Package (Linux — AppImage)
         if: runner.os == 'Linux'
         run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
           mkdir -p AppDir/usr/bin
           cp target/release/openscreenrec AppDir/usr/bin/
           cp packaging/openscreenrec.desktop AppDir/
           cp assets/icon-256.png AppDir/openscreenrec.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
-          mv OpenScreenRec-*.AppImage openscreenrec-linux-x64.AppImage
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage appimagetool-x86_64.AppImage
+          # Populate the AppDir, fix permissions, then build the image in a
+          # separate step — linuxdeploy's internal appimagetool chokes on
+          # AppRun permissions on CI runners.
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir
+          chmod -R a+rX AppDir
+          ./appimagetool-x86_64.AppImage AppDir openscreenrec-linux-x64.AppImage
 
       - uses: softprops/action-gh-release@v2
         with:
