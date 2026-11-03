@@ -71,12 +71,13 @@ jobs:
         run: |
           choco install nsis -y --no-progress
           New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem target/release/*.exe | ForEach-Object { Write-Output "exe: $($_.FullName)" }
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           & "C:\Program Files (x86)\NSIS\makensis.exe" `
             "/DAPP_VERSION=$version" `
-            "/DEXE_PATH=target\release\${{ matrix.binary }}" `
+            "/DEXE_PATH=target/release/${{ matrix.binary }}" `
             "/DLICENSE_PATH=LICENSE" "/DREADME_PATH=README.md" `
-            "/DOUT_DIR=dist" packaging\windows.nsi
+            "/DOUT_DIR=dist" packaging/windows.nsi
 
       - name: Package (macOS — .app bundle + .dmg)
         if: runner.os == 'MacOS'
@@ -176,9 +177,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export APPIMAGE_EXTRACT_AND_RUN=1
-          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications
           cp target/release/openscreenrec AppDir/usr/bin/
-          cp packaging/openscreenrec.desktop AppDir/
+          cp packaging/openscreenrec.desktop AppDir/usr/share/applications/
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp assets/icon-256.png AppDir/usr/share/icons/hicolor/256x256/apps/openscreenrec.png
           cp assets/icon-256.png AppDir/openscreenrec.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
