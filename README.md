@@ -7,6 +7,7 @@
 
 [![CI](https://github.com/fanellomiramare/OpenScreenRec/actions/workflows/ci.yml/badge.svg)](https://github.com/fanellomiramare/OpenScreenRec/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Download alpha](https://img.shields.io/badge/download-v0.1.0--alpha-blue.svg)](https://github.com/fanellomiramare/OpenScreenRec/releases/tag/v0.1.0-alpha)
 
 **OpenScreenRec** is a free and open-source screen recorder, written in **100% Rust** — no Electron, no web tech, no telemetry. Lightweight, local-first and cross-platform. Your recordings never leave your machine.
 
@@ -40,27 +41,31 @@ Grab the latest builds from the [releases page](https://github.com/fanellomirama
 
 ### Windows
 
-| Package              | Status              |
-| -------------------- | ------------------- |
-| Installer (`.exe`)   | ready (NSIS)        |
-| Portable (`.zip`)    | ready               |
+| Package              | Download                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Installer (`.exe`)   | [openscreenrec-setup.exe](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-setup.exe) (NSIS) |
+| Portable (`.zip`)    | [openscreenrec-windows-x64.zip](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-windows-x64.zip) |
 
 ### macOS
 
-| Package                       | Status                                             |
-| ----------------------------- | -------------------------------------------------- |
-| Apple Silicon (`.dmg`)        | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
-| Intel (`.dmg`)                | ready — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
+| Package                       | Download                                                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Apple Silicon (`.dmg`)        | [openscreenrec-macos-arm64.dmg](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-macos-arm64.dmg) — first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
+| Intel (`.dmg`)                | building — attached automatically when the Intel runner frees up; first-launch notes in [docs/MACOS.md](docs/MACOS.md) |
 | Homebrew Cask                 | cask in [packaging/](packaging/openscreenrec.rb) — no Gatekeeper prompt at all |
 
 ### Linux
 
-| Package            | Status                                                |
-| ------------------ | ----------------------------------------------------- |
-| AppImage           | ready — bundles its libraries                         |
-| `.deb` / `.rpm`    | ready — requires FFmpeg on PATH (`Recommends`/deps)   |
-| Flatpak            | planned                                               |
-| AUR                | planned                                               |
+| Package            | Download                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| AppImage           | [openscreenrec-linux-x64.AppImage](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-linux-x64.AppImage) — bundles its libraries |
+| `.deb`             | [openscreenrec-linux-x64.deb](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-linux-x64.deb) |
+| `.rpm`             | [openscreenrec-linux-x64.rpm](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-linux-x64.rpm) |
+| `.tar.gz`          | [openscreenrec-linux-x64.tar.gz](https://github.com/fanellomiramare/OpenScreenRec/releases/download/v0.1.0-alpha/openscreenrec-linux-x64.tar.gz) |
+| Flatpak            | planned                                                                                                     |
+| AUR                | planned                                                                                                     |
+
+> All links above point to the `v0.1.0-alpha` pre-release. The `.deb`/`.rpm` still need FFmpeg on PATH; the AppImage bundles its libraries.
 
 Linux captures through **X11** (any desktop) or the **desktop portal** (Wayland — GNOME/KDE show the source-picker dialog; needs `xdg-desktop-portal` and PipeWire, standard on modern distros).
 
