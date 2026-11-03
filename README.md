@@ -1,5 +1,6 @@
 <div align="center">
   <img src="assets/icon-256.png" width="96" alt="OpenScreenRec icon">
+  <p><img src="docs/screenshots/toolbar.png" alt="The OpenScreenRec toolbar" width="360"></p>
 </div>
 
 # OpenScreenRec
@@ -9,7 +10,7 @@
 
 **OpenScreenRec** is a free and open-source screen recorder, written in **100% Rust** — no Electron, no web tech, no telemetry. Lightweight, local-first and cross-platform. Your recordings never leave your machine.
 
-> 🚧 OpenScreenRec is in early development. The **macOS `.dmg`** is ready since M4 (first launch needs a one-time Gatekeeper approval — [read the macOS guide](docs/MACOS.md) before installing); Windows and Linux installers ship with **M5** — until then, [build from source](#build-from-source) and follow the [roadmap](#roadmap).
+> 🚧 **Early development.** The first testable builds are published as the [`v0.1.0-alpha` pre-release](https://github.com/fanellomiramare/OpenScreenRec/releases) — please [try them and report issues](.github/ISSUE_TEMPLATE/bug_report.md)! **Windows is the most-tested platform** (it is the maintainer's daily driver); macOS and Linux builds compile and are expected to work, but have seen little real-world testing — reports from those platforms are especially welcome. See [Platform status](#platform-status) for details.
 
 ## Philosophy
 
@@ -19,6 +20,23 @@
 - **Fully open source** — MIT licensed. Every third-party reference is credited in [Credits & references](#credits--references).
 
 ## Downloads
+
+Grab the latest builds from the [releases page](https://github.com/fanellomiramare/OpenScreenRec/releases). The `v0.1.0-alpha` pre-release is the first testable snapshot — see the [Platform status](#platform-status) table for how well your OS is covered before installing.
+
+### Platform status
+
+| Platform                    | Status                                                     |
+| --------------------------- | ---------------------------------------------------------- |
+| **Windows**                 | most-tested (maintainer's daily driver). The unsigned installer/portable will trigger a SmartScreen warning — *More info → Run anyway*. |
+| **macOS**                   | compiles and expected to work; needs real-world testing. First launch requires a one-time Gatekeeper approval — [docs/MACOS.md](docs/MACOS.md). Prefer the Homebrew cask when available. |
+| **Linux (X11)**             | X11 capture is functionally tested in CI (Xvfb) but deserves more desktop testing. |
+| **Linux (Wayland)**         | experimental: compiles, never verified on a live session. Uses the desktop portal; requires `xdg-desktop-portal` + PipeWire. Feedback especially welcome. |
+
+### Requirements
+
+- **FFmpeg** must be available for encoding. If it isn't found, the app offers an in-app **Download FFmpeg** button (installs into a per-user cache; nothing is bundled). A system-wide FFmpeg on `PATH` (or `OSR_FFMPEG_PATH`) is also fine.
+- **macOS**: Screen Recording (+ Microphone, if enabled) permissions — the app guides you.
+- **Linux (Wayland)**: `xdg-desktop-portal` + PipeWire.
 
 ### Windows
 

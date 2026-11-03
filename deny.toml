@@ -21,6 +21,9 @@ allow = [
     "Ubuntu-font-1.0",
     # ksni (the Linux tray backend) is Unlicense-only.
     "Unlicense",
+    # ring (via reqwest/ffmpeg-sidecar) mixes these.
+    "ISC",
+    "OpenSSL",
 ]
 confidence-threshold = 0.93
 

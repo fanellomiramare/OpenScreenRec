@@ -12,6 +12,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use crate::{EncodeError, VideoSettings};
+use ffmpeg_sidecar::paths::sidecar_dir;
 use osr_common::frame::{FrameFormat, VideoFrame};
 
 /// Anything that turns video frames into a finished output file.
@@ -43,15 +44,22 @@ impl FfmpegPipeEncoder {
                 return Some(path);
             }
         }
-        let path_var = std::env::var_os("PATH")?;
         let exe = if cfg!(windows) {
             "ffmpeg.exe"
         } else {
             "ffmpeg"
         };
-        std::env::split_paths(&path_var)
-            .map(|dir| dir.join(exe))
-            .find(|candidate| candidate.is_file())
+        if let Some(path_var) = std::env::var_os("PATH")
+            && let Some(found) = std::env::split_paths(&path_var)
+                .map(|dir| dir.join(exe))
+                .find(|candidate| candidate.is_file())
+        {
+            return Some(found);
+        }
+        // The ffmpeg-sidecar cache, populated by the in-app download.
+        let sidecar_dir = sidecar_dir().ok()?;
+        let candidate = sidecar_dir.join(exe);
+        candidate.is_file().then_some(candidate)
     }
 
     /// Spawn ffmpeg and open the frame pipe.

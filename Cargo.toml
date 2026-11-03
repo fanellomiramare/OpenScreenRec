@@ -31,6 +31,7 @@ toml = "1"
 tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
 global-hotkey = "0.9"
 rfd = "0.17"
+ffmpeg-sidecar = "2.7"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [package]
@@ -45,6 +46,7 @@ publish.workspace = true
 [dependencies]
 eframe = "0.37"
 image = { workspace = true }
+ffmpeg-sidecar = { workspace = true }
 osr-capture = { workspace = true }
 osr-audio = { workspace = true }
 osr-common = { workspace = true }

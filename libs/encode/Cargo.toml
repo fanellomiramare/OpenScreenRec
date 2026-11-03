@@ -8,6 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+ffmpeg-sidecar = { workspace = true }
 osr-common = { workspace = true }
 thiserror = { workspace = true }
 

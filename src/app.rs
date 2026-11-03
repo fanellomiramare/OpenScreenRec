@@ -47,6 +47,18 @@ enum View {
 
 enum AppEvent {
     Snapshot(Result<egui::ColorImage, String>),
+    FfmpegMissing,
+    FfmpegDownloadResult(Result<(), String>),
+}
+
+/// FFmpeg availability, checked at startup and after in-app downloads.
+#[derive(Clone, PartialEq)]
+enum FfmpegState {
+    Checking,
+    Present,
+    Missing,
+    Downloading,
+    DownloadFailed(String),
 }
 
 struct OverlayState {
@@ -247,6 +259,7 @@ pub struct App {
     view: View,
     sized_view: bool,
     status: Option<String>,
+    ffmpeg: FfmpegState,
     events_tx: Sender<AppEvent>,
     events_rx: Receiver<AppEvent>,
     overlay: Option<OverlayState>,
@@ -269,12 +282,23 @@ impl App {
         } else {
             View::PermissionNeeded
         };
+        // Quick background check: is an FFmpeg binary discoverable?
+        let check_tx = events_tx.clone();
+        std::thread::spawn(move || {
+            let installed = osr_encode::ffmpeg::FfmpegPipeEncoder::ffmpeg_binary().is_some();
+            let _ = check_tx.send(if installed {
+                AppEvent::FfmpegDownloadResult(Ok(()))
+            } else {
+                AppEvent::FfmpegMissing
+            });
+        });
         Self {
             controller,
             settings,
             view,
             sized_view: false,
             status: None,
+            ffmpeg: FfmpegState::Checking,
             events_tx,
             events_rx,
             overlay: None,
@@ -358,8 +382,28 @@ impl App {
                     self.status = Some(format!("Region snapshot failed: {message}"));
                     self.exit_overlay(ctx);
                 }
+                AppEvent::FfmpegMissing => self.ffmpeg = FfmpegState::Missing,
+                AppEvent::FfmpegDownloadResult(Ok(())) => {
+                    self.ffmpeg = FfmpegState::Present;
+                    self.status = Some("FFmpeg ready.".into());
+                }
+                AppEvent::FfmpegDownloadResult(Err(message)) => {
+                    self.ffmpeg = FfmpegState::DownloadFailed(message);
+                }
             }
         }
+    }
+
+    /// Download FFmpeg into the sidecar cache on a background thread.
+    fn download_ffmpeg(&mut self, ctx: &Context) {
+        self.ffmpeg = FfmpegState::Downloading;
+        let tx = self.events_tx.clone();
+        let repaint = ctx.clone();
+        std::thread::spawn(move || {
+            let result = ffmpeg_sidecar::download::auto_download().map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::FfmpegDownloadResult(result));
+            repaint.request_repaint();
+        });
     }
 
     fn exit_overlay(&mut self, ctx: &Context) {
@@ -438,6 +482,30 @@ impl App {
                 ui.weak(format!("{} fps", self.settings.fps));
             }
         });
+
+        match self.ffmpeg.clone() {
+            FfmpegState::Missing => {
+                ui.horizontal(|ui| {
+                    ui.weak("FFmpeg is required to encode:");
+                    if ui.small_button("Download").clicked() {
+                        self.download_ffmpeg(ui.ctx());
+                    }
+                });
+            }
+            FfmpegState::Downloading => {
+                ui.weak("Downloading FFmpeg…");
+                ui.ctx().request_repaint_after(Duration::from_millis(300));
+            }
+            FfmpegState::DownloadFailed(message) => {
+                ui.horizontal(|ui| {
+                    ui.weak(format!("FFmpeg download failed: {message}"));
+                    if ui.small_button("Retry").clicked() {
+                        self.download_ffmpeg(ui.ctx());
+                    }
+                });
+            }
+            _ => {}
+        }
 
         let message = view
             .last_result
