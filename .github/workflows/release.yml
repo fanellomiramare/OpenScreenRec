@@ -197,7 +197,7 @@ jobs:
         with:
           files: |
             ${{ matrix.artifact-name }}${{ matrix.ext }}
-            openscreenrec-setup.exe
+            dist/openscreenrec-setup.exe
             openscreenrec-linux-x64.AppImage
             openscreenrec-linux-x64.deb
             openscreenrec-linux-x64.rpm
